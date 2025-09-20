@@ -8,7 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useGasStationStore } from '@/store/gasStationStore';
-import { Settings as SettingsIcon, Download, Upload, RotateCcw, Save, Globe, Moon, Sun, Database, Fuel, Edit, Plus, Trash2 } from 'lucide-react';
+import { Settings as SettingsIcon, Download, Upload, RotateCcw, Save, Globe, Moon, Sun, Database, Fuel, Edit, Plus, Trash2, DollarSign } from 'lucide-react';
 
 interface SettingsProps {
   language?: 'ar' | 'fr';
@@ -39,6 +39,8 @@ const AppSettings: React.FC<SettingsProps> = ({
   const [showEditPumpDialog, setShowEditPumpDialog] = useState(false);
   const [showAddTankDialog, setShowAddTankDialog] = useState(false);
   const [showEditTankDialog, setShowEditTankDialog] = useState(false);
+  const [showAddFuelTypeDialog, setShowAddFuelTypeDialog] = useState(false);
+  const [showEditFuelTypeDialog, setShowEditFuelTypeDialog] = useState(false);
   
   // إعدادات مؤقتة للتعديل
   const [tempSettings, setTempSettings] = useState({
@@ -99,7 +101,7 @@ const AppSettings: React.FC<SettingsProps> = ({
       selectFile: 'اختر ملف',
       noFileSelected: 'لم يتم اختيار ملف',
       resetWarning: 'تحذير: هذا الإجراء لا يمكن الراجع عنه!',
-      settingsSaved: 'تم حفظ الإعداد��ت',
+      settingsSaved: 'تم حفظ الإعدادات',
       dataExported: 'تم تصدير البيانات',
       dataImported: 'تم استيراد البيانات',
       dataReset: 'تم إعادة تعيين البيانات',
@@ -248,16 +250,19 @@ const AppSettings: React.FC<SettingsProps> = ({
       updateFuelType(editingFuelType.id, {
         name: { ar: fuelTypeData.name, fr: fuelTypeData.name },
         color: fuelTypeData.color,
+        pricePerLiter: fuelTypeData.pricePerLiter || 0,
       });
     } else {
       addFuelType({
         id: `fuel-${Date.now()}`,
         name: { ar: fuelTypeData.name, fr: fuelTypeData.name },
-        pricePerLiter: 0,
+        pricePerLiter: fuelTypeData.pricePerLiter || 0,
         color: fuelTypeData.color,
       });
     }
     setEditingFuelType(null);
+    setShowAddFuelTypeDialog(false);
+    setShowEditFuelTypeDialog(false);
   };
 
   const handleDeleteFuelType = (fuelTypeId: string) => {
@@ -492,7 +497,7 @@ const AppSettings: React.FC<SettingsProps> = ({
           {/* قسم الخزانات */}
           <TabsContent value="tanks" className="space-y-6">
             <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-semibold">��دارة الخزانات</h2>
+              <h2 className="text-2xl font-semibold">إدارة الخزانات</h2>
               <Dialog open={showAddTankDialog} onOpenChange={setShowAddTankDialog}>
                 <DialogTrigger asChild>
                   <Button onClick={() => {
@@ -660,79 +665,238 @@ const AppSettings: React.FC<SettingsProps> = ({
             </div>
           </TabsContent>
 
-          {/* باقي الأقسام */}
-          <TabsContent value="fuel-types" className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* قسم أنواع الوقود المحسن */}
+          <TabsContent value="fuel-types" className="space-y-6">
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-semibold">{t.fuelTypeSettings}</h2>
+              <Dialog open={showAddFuelTypeDialog} onOpenChange={setShowAddFuelTypeDialog}>
+                <DialogTrigger asChild>
+                  <Button onClick={() => {
+                    setEditingFuelType(null);
+                    setShowAddFuelTypeDialog(true);
+                  }}>
+                    <Plus className="h-4 w-4 ml-2" />
+                    {t.addFuelType}
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-2xl">
+                  <DialogHeader>
+                    <DialogTitle>{t.addFuelType}</DialogTitle>
+                  </DialogHeader>
+                  <FuelTypeForm
+                    fuelType={null}
+                    onSave={handleSaveFuelType}
+                    onCancel={() => setShowAddFuelTypeDialog(false)}
+                    texts={t}
+                    language={language}
+                  />
+                </DialogContent>
+              </Dialog>
+            </div>
+
+            {/* عرض أنواع الوقود */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {fuelTypes.map((fuelType) => {
+                const usedInPumps = pumps.filter(pump => pump.fuelType === fuelType.id);
+                const usedInTanks = tanks.filter(tank => tank.fuelType === fuelType.id);
+                const canDelete = usedInPumps.length === 0 && usedInTanks.length === 0;
+                
+                return (
+                  <Card key={fuelType.id} className="bg-white">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="w-6 h-6 rounded-full border-2 border-white shadow-sm" 
+                            style={{ backgroundColor: fuelType.color }}
+                          />
+                          <h3 className="font-bold text-lg">{fuelType.name[language]}</h3>
+                        </div>
+                        <div className="flex gap-1">
+                          <Dialog open={showEditFuelTypeDialog && editingFuelType?.id === fuelType.id} onOpenChange={(open) => {
+                            setShowEditFuelTypeDialog(open);
+                            if (!open) setEditingFuelType(null);
+                          }}>
+                            <DialogTrigger asChild>
+                              <Button 
+                                variant="ghost" 
+                                size="sm"
+                                onClick={() => {
+                                  setEditingFuelType(fuelType);
+                                  setShowEditFuelTypeDialog(true);
+                                }}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="max-w-2xl">
+                              <DialogHeader>
+                                <DialogTitle>{t.editFuelType}</DialogTitle>
+                              </DialogHeader>
+                              <FuelTypeForm
+                                fuelType={fuelType}
+                                onSave={handleSaveFuelType}
+                                onCancel={() => {
+                                  setShowEditFuelTypeDialog(false);
+                                  setEditingFuelType(null);
+                                }}
+                                texts={t}
+                                language={language}
+                              />
+                            </DialogContent>
+                          </Dialog>
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => handleDeleteFuelType(fuelType.id)}
+                            disabled={!canDelete}
+                            className={!canDelete ? "opacity-50 cursor-not-allowed" : ""}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-3">
+                        {/* معلومات السعر */}
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-muted-foreground">السعر لكل لتر</span>
+                          <span className="font-mono text-lg font-bold text-green-600">
+                            {(fuelType.pricePerLiter || 0).toFixed(2)} دج
+                          </span>
+                        </div>
+
+                        {/* معلومات الاستخدام */}
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">المضخات المستخدمة:</span>
+                            <span className="font-medium">{usedInPumps.length}</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">الخزانات المستخدمة:</span>
+                            <span className="font-medium">{usedInTanks.length}</span>
+                          </div>
+                        </div>
+
+                        {/* تفاصيل الاستخدام */}
+                        {(usedInPumps.length > 0 || usedInTanks.length > 0) && (
+                          <div className="mt-3 text-xs">
+                            {usedInPumps.length > 0 && (
+                              <div className="bg-blue-50 border border-blue-200 rounded p-2 mb-2">
+                                <p className="font-medium text-blue-800 mb-1">المضخات:</p>
+                                <p className="text-blue-700">
+                                  {usedInPumps.map(pump => pump.name).join('، ')}
+                                </p>
+                              </div>
+                            )}
+                            {usedInTanks.length > 0 && (
+                              <div className="bg-green-50 border border-green-200 rounded p-2">
+                                <p className="font-medium text-green-800 mb-1">الخزانات:</p>
+                                <p className="text-green-700">
+                                  {usedInTanks.map(tank => tank.name).join('، ')}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* تحذير عدم إمكانية الحذف */}
+                        {!canDelete && (
+                          <div className="bg-yellow-50 border border-yellow-200 rounded p-2">
+                            <p className="text-yellow-800 text-xs font-medium">
+                              ⚠️ لا يمكن حذف هذا النوع لأنه مستخدم في المضخات أو الخزانات
+                            </p>
+                          </div>
+                        )}
+
+                        {/* حالة غير مستخدم */}
+                        {canDelete && (
+                          <div className="bg-gray-50 border border-gray-200 rounded p-2">
+                            <p className="text-gray-700 text-xs">
+                              غير مستخدم - يمكن حذفه بأمان
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+
+            {/* رسالة عدم وجود أنواع وقود */}
+            {fuelTypes.length === 0 && (
               <Card>
-                <CardHeader>
-                  <CardTitle>{t.taxRate}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div>
-                    <Label>{t.taxRate} ({t.percent})</Label>
-                    <Input
-                      type="number"
-                      value={tempSettings.taxRate}
-                      onChange={(e) => setTempSettings(prev => ({ ...prev, taxRate: parseFloat(e.target.value) || 0 }))}
-                      min="0"
-                      max="100"
-                      step="0.1"
-                    />
-                    <p className="text-sm text-muted-foreground mt-1">
-                      المعدل الحالي: {tempSettings.taxRate}%
-                    </p>
+                <CardContent className="p-8 text-center">
+                  <Fuel className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                  <p className="text-lg font-medium text-muted-foreground">لا توجد أنواع وقود</p>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    قم بإضافة أنواع الوقود المختلفة التي تتعامل بها محطتك
+                  </p>
+                  <Button 
+                    className="mt-4"
+                    onClick={() => {
+                      setEditingFuelType(null);
+                      setShowAddFuelTypeDialog(true);
+                    }}
+                  >
+                    <Plus className="h-4 w-4 ml-2" />
+                    إضافة نوع وقود جديد
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* إحصائيات أنواع الوقود */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card>
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">إجمالي أنواع الوقود</p>
+                      <p className="text-2xl font-bold">{fuelTypes.length}</p>
+                    </div>
+                    <Fuel className="h-8 w-8 text-blue-600" />
                   </div>
                 </CardContent>
               </Card>
-
+              
               <Card>
-                <CardHeader>
-                  <CardTitle>{t.zakatRate}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div>
-                    <Label>{t.zakatRate} ({t.percent})</Label>
-                    <Input
-                      type="number"
-                      value={tempSettings.zakatRate}
-                      onChange={(e) => setTempSettings(prev => ({ ...prev, zakatRate: parseFloat(e.target.value) || 0 }))}
-                      min="0"
-                      max="100"
-                      step="0.1"
-                    />
-                    <p className="text-sm text-muted-foreground mt-1">
-                      المعدل الحالي: {tempSettings.zakatRate}%
-                    </p>
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">أنواع مستخدمة</p>
+                      <p className="text-2xl font-bold text-green-600">
+                        {fuelTypes.filter(ft => 
+                          pumps.some(p => p.fuelType === ft.id) || 
+                          tanks.some(t => t.fuelType === ft.id)
+                        ).length}
+                      </p>
+                    </div>
+                    <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center">
+                      <div className="h-4 w-4 rounded-full bg-green-600" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              
+              <Card>
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">متوسط السعر</p>
+                      <p className="text-2xl font-bold text-orange-600">
+                        {fuelTypes.length > 0 
+                          ? (fuelTypes.reduce((sum, ft) => sum + (ft.pricePerLiter || 0), 0) / fuelTypes.length).toFixed(2)
+                          : '0.00'
+                        } دج
+                      </p>
+                    </div>
+                    <DollarSign className="h-8 w-8 text-orange-600" />
                   </div>
                 </CardContent>
               </Card>
             </div>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>معاينة الحسابات</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="bg-muted p-4 rounded-lg">
-                      <p className="text-sm text-muted-foreground">مثال: إيراد 10,000 دج</p>
-                      <p className="font-bold">ضريبة: {(10000 * tempSettings.taxRate / 100).toFixed(2)} دج</p>
-                    </div>
-                    <div className="bg-muted p-4 rounded-lg">
-                      <p className="text-sm text-muted-foreground">مثال: إيراد 10,000 دج</p>
-                      <p className="font-bold">زكاة: {(10000 * tempSettings.zakatRate / 100).toFixed(2)} دج</p>
-                    </div>
-                    <div className="bg-muted p-4 rounded-lg">
-                      <p className="text-sm text-muted-foreground">المجموع</p>
-                      <p className="font-bold">
-                        {((10000 * tempSettings.taxRate / 100) + (10000 * tempSettings.zakatRate / 100)).toFixed(2)} دج
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
           </TabsContent>
 
           <TabsContent value="general" className="space-y-4">
@@ -1068,11 +1232,12 @@ const PumpForm = ({ pump, fuelTypes, onSave, onCancel, texts, language }: any) =
   );
 };
 
-// مكون نموذج نوع الوقود
-const FuelTypeForm = ({ fuelType, onSave, onCancel, texts }: any) => {
+// مكون نموذج نوع الوقود المحسن
+const FuelTypeForm = ({ fuelType, onSave, onCancel, texts, language }: any) => {
   const [formData, setFormData] = useState({
-    name: fuelType?.name?.ar || fuelType?.name || '',
+    name: fuelType?.name?.[language] || fuelType?.name || '',
     color: fuelType?.color || '#22c55e',
+    pricePerLiter: fuelType?.pricePerLiter || 0,
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -1091,8 +1256,53 @@ const FuelTypeForm = ({ fuelType, onSave, onCancel, texts }: any) => {
     { name: 'رمادي', value: '#6b7280' },
   ];
 
+  const commonFuelTypes = [
+    { name: 'بنزين عادي', color: '#22c55e', price: 45.5 },
+    { name: 'بنزين ممتاز', color: '#3b82f6', price: 48.0 },
+    { name: 'ديزل', color: '#eab308', price: 32.0 },
+    { name: 'غاز طبيعي', color: '#a855f7', price: 25.0 },
+  ];
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-6">
+      {/* اختيار سريع لأنواع الوقود الشائعة */}
+      {!fuelType && (
+        <div>
+          <Label>أنواع الوقود الشائعة</Label>
+          <div className="grid grid-cols-2 gap-2 mt-2">
+            {commonFuelTypes.map((fuel) => (
+              <button
+                key={fuel.name}
+                type="button"
+                onClick={() => setFormData({
+                  name: fuel.name,
+                  color: fuel.color,
+                  pricePerLiter: fuel.price,
+                })}
+                className="flex items-center gap-2 p-3 rounded border hover:border-primary hover:bg-primary/5 transition-colors text-right"
+              >
+                <div 
+                  className="w-4 h-4 rounded-full" 
+                  style={{ backgroundColor: fuel.color }}
+                />
+                <div className="flex-1">
+                  <p className="font-medium text-sm">{fuel.name}</p>
+                  <p className="text-xs text-muted-foreground">{fuel.price} دج/لتر</p>
+                </div>
+              </button>
+            ))}
+          </div>
+          <div className="relative my-4">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">أو أدخل بيانات مخصصة</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div>
         <Label>{texts.fuelTypeName}</Label>
         <Input
@@ -1103,6 +1313,22 @@ const FuelTypeForm = ({ fuelType, onSave, onCancel, texts }: any) => {
         />
         <p className="text-xs text-muted-foreground mt-1">
           أدخل اسم نوع الوقود (مثل: بنزين عادي، بنزين ممتاز، ديزل، غاز طبيعي)
+        </p>
+      </div>
+
+      <div>
+        <Label>السعر لكل لتر (دج)</Label>
+        <Input
+          type="number"
+          step="0.01"
+          min="0"
+          value={formData.pricePerLiter}
+          onChange={(e) => setFormData(prev => ({ ...prev, pricePerLiter: parseFloat(e.target.value) || 0 }))}
+          placeholder="45.50"
+          required
+        />
+        <p className="text-xs text-muted-foreground mt-1">
+          السعر الحالي لكل لتر من هذا النوع من الوقود
         </p>
       </div>
       
@@ -1116,7 +1342,7 @@ const FuelTypeForm = ({ fuelType, onSave, onCancel, texts }: any) => {
                 key={color.value}
                 type="button"
                 onClick={() => setFormData(prev => ({ ...prev, color: color.value }))}
-                className={`flex items-center gap-2 p-2 rounded border text-xs ${
+                className={`flex items-center gap-2 p-2 rounded border text-xs transition-colors ${
                   formData.color === color.value 
                     ? 'border-primary bg-primary/10' 
                     : 'border-muted hover:border-muted-foreground/50'
@@ -1149,14 +1375,19 @@ const FuelTypeForm = ({ fuelType, onSave, onCancel, texts }: any) => {
         </div>
         
         {/* معاينة اللون */}
-        <div className="mt-2 p-3 bg-muted rounded-lg">
+        <div className="mt-3 p-4 bg-muted rounded-lg">
           <p className="text-xs text-muted-foreground mb-2">معاينة:</p>
-          <div className="flex items-center gap-2">
-            <div 
-              className="w-6 h-6 rounded-full border-2 border-white shadow-sm" 
-              style={{ backgroundColor: formData.color }}
-            />
-            <span className="font-medium">{formData.name || 'نوع الوقود'}</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div 
+                className="w-6 h-6 rounded-full border-2 border-white shadow-sm" 
+                style={{ backgroundColor: formData.color }}
+              />
+              <span className="font-medium">{formData.name || 'نوع الوقود'}</span>
+            </div>
+            <span className="font-mono text-lg font-bold text-green-600">
+              {formData.pricePerLiter.toFixed(2)} دج/لتر
+            </span>
           </div>
         </div>
       </div>
