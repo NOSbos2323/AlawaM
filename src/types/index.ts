@@ -9,8 +9,12 @@ export interface FuelType {
 
 export interface Pump {
   id: string;
+  name: string;
   number: number;
   fuelType: string;
+  tankId: string; // إضافة معرف الخزان
+  buyPrice: number;
+  sellPrice: number;
   previousReading: number;
   currentReading: number;
   isActive: boolean;
@@ -19,11 +23,12 @@ export interface Pump {
 export interface Tank {
   id: string;
   name: string;
-  fuelType: string;
-  capacity: number;
-  currentLevel: number;
-  minLevel: number;
-  color: string;
+  capacity: number; // السعة الكاملة باللتر
+  currentLevel: number; // المستوى الحالي باللتر
+  fuelType: string; // معرف نوع الوقود
+  minLevel: number; // الحد الأدنى للتنبيه
+  isActive: boolean;
+  lastRefill?: Date;
 }
 
 export interface DailyReading {
@@ -50,10 +55,11 @@ export interface Customer {
 export interface CreditTransaction {
   id: string;
   customerId: string;
-  type: 'credit' | 'payment';
+  type: 'debt' | 'payment';
   amount: number;
   description: string;
   date: string;
+  transactionId?: string;
   createdAt: string;
 }
 
@@ -94,6 +100,7 @@ export interface StoreSale {
   date: string;
   paymentMethod: 'cash' | 'credit';
   customerId?: string;
+  transactionId?: string;
 }
 
 export interface TaxRecord {

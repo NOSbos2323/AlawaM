@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useGasStationStore } from '@/store/gasStationStore';
-import { ShoppingBag, Plus, Package, AlertTriangle, Receipt } from 'lucide-react';
+import { ShoppingBag, Plus, Package, AlertTriangle, Receipt, Trash2 } from 'lucide-react';
 
 interface StoreManagementProps {
   language?: 'ar' | 'fr';
@@ -35,6 +35,7 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ language = 'ar' }) =>
   const [saleItems, setSaleItems] = useState<Array<{ itemId: string; quantity: number }>>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<string>('');
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'credit'>('cash');
+  const [showAddItemDialog, setShowAddItemDialog] = useState(false);
 
   const isRTL = language === 'ar';
 
@@ -119,6 +120,7 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ language = 'ar' }) =>
         category: newItem.category,
       });
       setNewItem({ nameAr: '', nameFr: '', price: '', stock: '', category: '' });
+      setShowAddItemDialog(false);
     }
   };
 
@@ -144,6 +146,7 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ language = 'ar' }) =>
   const completeSale = () => {
     if (saleItems.length > 0) {
       const total = calculateSaleTotal();
+      const transactionId = `TXN-${Date.now()}`;
       
       addStoreSale({
         items: saleItems.map(saleItem => {
@@ -158,6 +161,7 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ language = 'ar' }) =>
         date: new Date().toISOString().split('T')[0],
         paymentMethod,
         customerId: selectedCustomer || undefined,
+        transactionId,
       });
 
       // Update stock
@@ -168,10 +172,37 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ language = 'ar' }) =>
         }
       });
 
+      // If credit sale, add to customer debt and credit transactions
+      if (paymentMethod === 'credit' && selectedCustomer) {
+        const { addCreditTransaction, updateCustomerDebt } = useGasStationStore.getState();
+        
+        // Add credit transaction
+        addCreditTransaction({
+          customerId: selectedCustomer,
+          type: 'debt',
+          amount: total,
+          description: `بيع متجر #${transactionId} - ${saleItems.length} منتج`,
+          date: new Date().toISOString().split('T')[0],
+          transactionId,
+        });
+
+        // Update customer debt
+        updateCustomerDebt(selectedCustomer, total);
+      }
+
       setSaleItems([]);
       setSelectedCustomer('');
       setPaymentMethod('cash');
     }
+  };
+
+  const removeItemFromSale = (itemId: string) => {
+    setSaleItems(prev => prev.filter(item => item.itemId !== itemId));
+  };
+
+  const deleteStoreItem = (itemId: string) => {
+    const { deleteStoreItem } = useGasStationStore.getState();
+    deleteStoreItem(itemId);
   };
 
   const getStockStatus = (item: any) => {
@@ -188,7 +219,7 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ language = 'ar' }) =>
           {t.title}
         </h1>
         <div className="flex gap-2">
-          <Dialog>
+          <Dialog open={showAddItemDialog} onOpenChange={setShowAddItemDialog}>
             <DialogTrigger asChild>
               <Button className="flex items-center gap-2">
                 <Plus className="h-4 w-4" />
@@ -245,6 +276,7 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ language = 'ar' }) =>
                 </div>
                 <div className="flex gap-2">
                   <Button onClick={handleAddItem}>{t.save}</Button>
+                  <Button variant="outline" onClick={() => setShowAddItemDialog(false)}>{t.cancel}</Button>
                 </div>
               </div>
             </DialogContent>
@@ -268,18 +300,28 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ language = 'ar' }) =>
                   <CardHeader>
                     <CardTitle className="flex items-center justify-between">
                       <span className="text-lg">{item.name[language]}</span>
-                      {stockStatus.status !== 'ok' && (
-                        <Badge variant={stockStatus.color as any} className="flex items-center gap-1">
-                          <AlertTriangle className="h-3 w-3" />
-                          {stockStatus.text}
-                        </Badge>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {stockStatus.status !== 'ok' && (
+                          <Badge variant={stockStatus.color as any} className="flex items-center gap-1">
+                            <AlertTriangle className="h-3 w-3" />
+                            {stockStatus.text}
+                          </Badge>
+                        )}
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => deleteStoreItem(item.id)}
+                          className="h-8 w-8 p-0"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">{t.price}</span>
-                      <span className="font-bold text-lg">{item.price.toFixed(2)} SAR</span>
+                      <span className="font-bold text-lg">{item.price.toFixed(2)} دج</span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">{t.stock}</span>
@@ -315,7 +357,7 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ language = 'ar' }) =>
                     <div key={item.id} className="flex items-center justify-between p-2 border rounded">
                       <div>
                         <p className="font-medium">{item.name[language]}</p>
-                        <p className="text-sm text-muted-foreground">{item.price.toFixed(2)} SAR</p>
+                        <p className="text-sm text-muted-foreground">{item.price.toFixed(2)} دج</p>
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-sm">({item.stock})</span>
@@ -347,13 +389,23 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ language = 'ar' }) =>
                     if (!item) return null;
                     return (
                       <div key={saleItem.itemId} className="flex items-center justify-between p-2 bg-muted rounded">
-                        <div>
+                        <div className="flex-1">
                           <p className="font-medium">{item.name[language]}</p>
                           <p className="text-sm text-muted-foreground">
-                            {saleItem.quantity} × {item.price.toFixed(2)} SAR
+                            {saleItem.quantity} × {item.price.toFixed(2)} دج
                           </p>
                         </div>
-                        <p className="font-bold">{(saleItem.quantity * item.price).toFixed(2)} SAR</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-bold">{(saleItem.quantity * item.price).toFixed(2)} دج</p>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => removeItemFromSale(saleItem.itemId)}
+                            className="h-8 w-8 p-0"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
                     );
                   })}
@@ -362,7 +414,7 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ language = 'ar' }) =>
                 <div className="border-t pt-4 space-y-3">
                   <div className="flex justify-between text-lg font-bold">
                     <span>{t.total}</span>
-                    <span>{calculateSaleTotal().toFixed(2)} SAR</span>
+                    <span>{calculateSaleTotal().toFixed(2)} دج</span>
                   </div>
 
                   <div>
@@ -383,7 +435,7 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ language = 'ar' }) =>
                       <Label>{t.customer}</Label>
                       <Select value={selectedCustomer} onValueChange={setSelectedCustomer}>
                         <SelectTrigger>
-                          <SelectValue />
+                          <SelectValue placeholder="اختر العميل" />
                         </SelectTrigger>
                         <SelectContent>
                           {customers.map(customer => (
@@ -398,7 +450,7 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ language = 'ar' }) =>
 
                   <Button
                     onClick={completeSale}
-                    disabled={saleItems.length === 0}
+                    disabled={saleItems.length === 0 || (paymentMethod === 'credit' && !selectedCustomer)}
                     className="w-full"
                   >
                     {t.completeSale}
@@ -421,7 +473,7 @@ const StoreManagement: React.FC<StoreManagementProps> = ({ language = 'ar' }) =>
                         {t.items}: {sale.items.length} | {sale.paymentMethod === 'cash' ? t.cash : t.credit}
                       </p>
                     </div>
-                    <p className="font-bold text-lg">{sale.total.toFixed(2)} SAR</p>
+                    <p className="font-bold text-lg">{sale.total.toFixed(2)} دج</p>
                   </div>
                 </CardContent>
               </Card>

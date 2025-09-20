@@ -12,18 +12,17 @@ interface FuelManagementProps {
   language?: 'ar' | 'fr';
 }
 
-const FuelManagement: React.FC<FuelManagementProps> = ({ language = 'ar' }) => {
-  const {
-    pumps,
-    fuelTypes,
+export default function FuelManagement({ language = 'ar' }: FuelManagementProps) {
+  const { 
+    pumps, 
+    fuelTypes, 
     tanks,
-    updatePumpReading,
-    addDailyReading,
-    updateTankLevel,
+    updatePump, 
+    recordSale,
+    updateTankLevel 
   } = useGasStationStore();
 
-  const [pumpReadings, setPumpReadings] = useState<Record<string, string>>({});
-  const [tankUpdates, setTankUpdates] = useState<Record<string, string>>({});
+  const [readings, setReadings] = useState<Record<string, number>>({});
 
   const isRTL = language === 'ar';
 
@@ -47,6 +46,10 @@ const FuelManagement: React.FC<FuelManagementProps> = ({ language = 'ar' }) => {
       updateLevel: 'تحديث المستوى',
       lowLevel: 'مستوى منخفض',
       calculate: 'حساب',
+      active: 'مُفعّل',
+      inactive: 'غير مُفعّل',
+      fuelManagement: 'إدارة الوقود',
+      manageDailyReadings: 'إدارة القراءات اليومية',
     },
     fr: {
       title: 'Gestion du carburant',
@@ -67,6 +70,10 @@ const FuelManagement: React.FC<FuelManagementProps> = ({ language = 'ar' }) => {
       updateLevel: 'Mettre à jour',
       lowLevel: 'Niveau bas',
       calculate: 'Calculer',
+      active: 'Actif',
+      inactive: 'Inactif',
+      fuelManagement: 'Gestion du carburant',
+      manageDailyReadings: 'Gestion des lectures quotidiennes',
     },
   };
 
@@ -76,238 +83,274 @@ const FuelManagement: React.FC<FuelManagementProps> = ({ language = 'ar' }) => {
     return fuelTypes.find(ft => ft.id === fuelTypeId);
   };
 
-  const calculateSales = (pumpId: string, newReading: number) => {
-    const pump = pumps.find(p => p.id === pumpId);
-    if (!pump) return { litersSold: 0, revenue: 0 };
-
+  const calculatePumpSales = (pump: any) => {
+    const newReading = readings[pump.id] || pump.currentReading;
     const litersSold = newReading - pump.currentReading;
-    const fuelType = getFuelType(pump.fuelType);
-    const revenue = litersSold * (fuelType?.pricePerLiter || 0);
+    const revenue = litersSold * (pump.sellPrice || 0);
+    const profit = litersSold * ((pump.sellPrice || 0) - (pump.buyPrice || 0));
 
-    return { litersSold, revenue };
+    return { litersSold, revenue, profit };
   };
 
-  const handleUpdatePumpReading = (pumpId: string) => {
-    const newReading = parseFloat(pumpReadings[pumpId] || '0');
+  const handleSaveReading = (pumpId: string, newReading: number) => {
     const pump = pumps.find(p => p.id === pumpId);
-    
-    if (pump && newReading > pump.currentReading) {
-      const { litersSold, revenue } = calculateSales(pumpId, newReading);
+    if (!pump) return;
+
+    const liters = newReading - pump.currentReading;
+    if (liters > 0) {
+      // تسجيل المبيعات وتحديث مستوى الخزان تلقائياً
+      const amount = liters * (pump.sellPrice || 0);
+      recordSale(pumpId, liters, amount);
       
-      // Add daily reading record
-      addDailyReading({
-        date: new Date().toISOString().split('T')[0],
-        pumpId,
+      // تحديث قراءة المضخة
+      updatePump(pumpId, {
         previousReading: pump.currentReading,
         currentReading: newReading,
-        litersSold,
-        revenue,
       });
-
-      // Update pump reading
-      updatePumpReading(pumpId, newReading);
-      
-      // Clear input
-      setPumpReadings(prev => ({ ...prev, [pumpId]: '' }));
     }
-  };
-
-  const handleUpdateTankLevel = (tankId: string) => {
-    const newLevel = parseFloat(tankUpdates[tankId] || '0');
-    if (newLevel >= 0) {
-      updateTankLevel(tankId, newLevel);
-      setTankUpdates(prev => ({ ...prev, [tankId]: '' }));
-    }
-  };
-
-  const saveAllReadings = () => {
-    Object.keys(pumpReadings).forEach(pumpId => {
-      if (pumpReadings[pumpId]) {
-        handleUpdatePumpReading(pumpId);
-      }
-    });
   };
 
   return (
-    <div className="space-y-6 bg-background p-4" dir={isRTL ? 'rtl' : 'ltr'}>
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold flex items-center gap-2">
-          <Fuel className="h-8 w-8" />
-          {t.title}
-        </h1>
-        <Button onClick={saveAllReadings} className="flex items-center gap-2">
-          <Save className="h-4 w-4" />
-          {t.saveAll}
-        </Button>
-      </div>
+    <div className="min-h-screen bg-background p-6 rtl">
+      <div className="max-w-7xl mx-auto space-y-6">
+        <div className="text-center">
+          <h1 className="text-3xl font-bold text-foreground mb-2">{t.fuelManagement}</h1>
+          <p className="text-muted-foreground">{t.manageDailyReadings}</p>
+        </div>
 
-      <Tabs defaultValue="pumps" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="pumps">{t.pumpReadings}</TabsTrigger>
-          <TabsTrigger value="tanks">{t.tankLevels}</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="pumps" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {pumps.map((pump) => {
-              const fuelType = getFuelType(pump.fuelType);
-              const newReading = parseFloat(pumpReadings[pump.id] || '0');
-              const sales = newReading > pump.currentReading ? calculateSales(pump.id, newReading) : null;
-
-              return (
-                <Card key={pump.id} className="bg-white">
-                  <CardHeader>
-                    <CardTitle className="flex items-center justify-between">
-                      <span>{t.pump} {pump.number}</span>
-                      <Badge variant="outline" style={{ backgroundColor: fuelType?.color + '20', color: fuelType?.color }}>
-                        {fuelType?.name[language]}
-                      </Badge>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <Label>{t.previousReading}</Label>
-                        <p className="font-mono">{pump.previousReading.toLocaleString()}</p>
+        {/* عرض حالة الخزانات */}
+        <Card className="bg-white">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Fuel className="h-5 w-5" />
+              حالة الخزانات
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {tanks.filter(tank => tank.isActive).map((tank) => {
+                const fuelType = fuelTypes.find(ft => ft.id === tank.fuelType);
+                const fillPercentage = (tank.currentLevel / tank.capacity) * 100;
+                const isLowLevel = tank.currentLevel <= tank.minLevel;
+                const connectedPumps = pumps.filter(pump => pump.tankId === tank.id);
+                
+                return (
+                  <div key={tank.id} className="bg-muted p-4 rounded-lg">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div 
+                        className="w-4 h-4 rounded-full" 
+                        style={{ backgroundColor: fuelType?.color }}
+                      />
+                      <span className="font-medium">{tank.name}</span>
+                      {isLowLevel && <span className="text-red-500">⚠️</span>}
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span>المستوى:</span>
+                        <span className={`font-mono ${isLowLevel ? 'text-red-600' : 'text-green-600'}`}>
+                          {(tank.currentLevel || 0).toLocaleString()} لتر
+                        </span>
                       </div>
-                      <div>
-                        <Label>{t.currentReading}</Label>
-                        <p className="font-mono">{pump.currentReading.toLocaleString()}</p>
+                      
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div 
+                          className={`h-2 rounded-full ${
+                            isLowLevel 
+                              ? 'bg-red-500' 
+                              : fillPercentage <= 30
+                                ? 'bg-yellow-500'
+                                : 'bg-green-500'
+                          }`}
+                          style={{ width: `${Math.min(fillPercentage, 100)}%` }}
+                        />
+                      </div>
+                      
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>{(fillPercentage || 0).toFixed(1)}%</span>
+                        <span>{connectedPumps.length} مضخة متصلة</span>
+                      </div>
+                      
+                      {isLowLevel && (
+                        <p className="text-xs text-red-600 bg-red-50 p-1 rounded">
+                          يحتاج إعادة تعبئة
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* عرض المضخات */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {pumps.filter(pump => pump.isActive).map((pump) => {
+            const fuelType = fuelTypes.find(ft => ft.id === pump.fuelType);
+            const tank = tanks.find(t => t.id === pump.tankId);
+            const sales = calculatePumpSales(pump);
+            
+            return (
+              <Card key={pump.id} className="bg-white">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div 
+                        className="w-4 h-4 rounded-full" 
+                        style={{ backgroundColor: fuelType?.color || '#gray' }}
+                      />
+                      <span>{pump.name}</span>
+                    </div>
+                    <Badge variant={pump.isActive ? "default" : "secondary"}>
+                      {pump.isActive ? t.active : t.inactive}
+                    </Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* معلومات الخزان المرتبط */}
+                  {tank && (
+                    <div className="bg-muted p-3 rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium">الخزان المرتبط:</span>
+                        <span className="text-sm">{tank.name}</span>
+                      </div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-muted-foreground">المستوى:</span>
+                        <span className={`text-xs font-mono ${
+                          (tank.currentLevel || 0) <= (tank.minLevel || 0) ? 'text-red-600' : 'text-green-600'
+                        }`}>
+                          {(tank.currentLevel || 0).toLocaleString()} / {(tank.capacity || 0).toLocaleString()} لتر
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-1.5">
+                        <div 
+                          className={`h-1.5 rounded-full ${
+                            (tank.currentLevel || 0) <= (tank.minLevel || 0)
+                              ? 'bg-red-500' 
+                              : 'bg-green-500'
+                          }`}
+                          style={{ width: `${Math.min(((tank.currentLevel || 0) / (tank.capacity || 1)) * 100, 100)}%` }}
+                        />
+                      </div>
+                      {(tank.currentLevel || 0) <= (tank.minLevel || 0) && (
+                        <p className="text-xs text-red-600 mt-1">⚠️ مستوى منخفض</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* عرض معلومات المضخة والوقود */}
+                  <div className="grid grid-cols-2 gap-4 text-sm bg-muted p-3 rounded">
+                    <div className="space-y-1">
+                      <Label className="text-xs">نوع الوقود</Label>
+                      <div className="flex items-center gap-2">
+                        <div 
+                          className="w-3 h-3 rounded-full" 
+                          style={{ backgroundColor: fuelType?.color }}
+                        />
+                        <span className="font-medium">{fuelType?.name?.[language] || 'غير محدد'}</span>
                       </div>
                     </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">الربح/لتر</Label>
+                      <p className="font-mono text-green-600">
+                        {((pump.sellPrice || 0) - (pump.buyPrice || 0)).toFixed(2)} دج
+                      </p>
+                    </div>
+                  </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor={`pump-${pump.id}`}>{t.newReading}</Label>
-                      <div className="flex gap-2">
+                  {/* عرض أسعار المضخة */}
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <Label>سعر الشراء</Label>
+                      <p className="font-mono text-red-600">{(pump.buyPrice || 0).toFixed(2)} دج/لتر</p>
+                    </div>
+                    <div>
+                      <Label>سعر البيع</Label>
+                      <p className="font-mono text-green-600">{(pump.sellPrice || 0).toFixed(2)} دج/لتر</p>
+                    </div>
+                  </div>
+
+                  {/* قراءات المضخة */}
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label>القراءة السابقة</Label>
+                        <p className="font-mono text-lg">{(pump.previousReading || 0).toLocaleString()}</p>
+                      </div>
+                      <div>
+                        <Label>القراءة الحالية</Label>
                         <Input
-                          id={`pump-${pump.id}`}
                           type="number"
-                          value={pumpReadings[pump.id] || ''}
-                          onChange={(e) => setPumpReadings(prev => ({ ...prev, [pump.id]: e.target.value }))}
-                          placeholder={pump.currentReading.toString()}
+                          min={pump.currentReading || 0}
+                          value={readings[pump.id] || pump.currentReading || 0}
+                          onChange={(e) => setReadings(prev => ({
+                            ...prev,
+                            [pump.id]: parseFloat(e.target.value) || (pump.currentReading || 0)
+                          }))}
                           className="font-mono"
                         />
-                        <Button
-                          size="sm"
-                          onClick={() => handleUpdatePumpReading(pump.id)}
-                          disabled={!pumpReadings[pump.id] || parseFloat(pumpReadings[pump.id]) <= pump.currentReading}
-                        >
-                          {t.updateReading}
-                        </Button>
                       </div>
                     </div>
 
-                    {sales && (
-                      <div className="bg-green-50 p-3 rounded-lg space-y-2">
-                        <div className="flex items-center gap-2">
-                          <Calculator className="h-4 w-4 text-green-600" />
-                          <span className="font-medium text-green-800">{t.calculate}</span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2 text-sm">
+                    {/* عرض المبيعات المحسوبة */}
+                    {readings[pump.id] && readings[pump.id] > (pump.currentReading || 0) && (
+                      <div className="bg-green-50 p-3 rounded border border-green-200">
+                        <div className="grid grid-cols-2 gap-4 text-sm">
                           <div>
-                            <Label>{t.litersSold}</Label>
-                            <p className="font-mono text-green-700">{sales.litersSold.toLocaleString()} L</p>
+                            <Label className="text-green-700">اللترات المباعة</Label>
+                            <p className="font-mono text-green-800 text-lg">
+                              {(readings[pump.id] - (pump.currentReading || 0)).toFixed(2)} لتر
+                            </p>
                           </div>
                           <div>
-                            <Label>{t.revenue}</Label>
-                            <p className="font-mono text-green-700">{sales.revenue.toFixed(2)} SAR</p>
+                            <Label className="text-green-700">المبلغ الإجمالي</Label>
+                            <p className="font-mono text-green-800 text-lg">
+                              {((readings[pump.id] - (pump.currentReading || 0)) * (pump.sellPrice || 0)).toFixed(2)} دج
+                            </p>
                           </div>
                         </div>
+                        
+                        {/* تحذير إذا كان الخزان لا يحتوي على كمية كافية */}
+                        {tank && (readings[pump.id] - (pump.currentReading || 0)) > (tank.currentLevel || 0) && (
+                          <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded">
+                            <p className="text-red-700 text-xs">
+                              ⚠️ تحذير: الكمية المطلوبة أكبر من المتوفر في الخزان!
+                            </p>
+                          </div>
+                        )}
                       </div>
                     )}
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </TabsContent>
 
-        <TabsContent value="tanks" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {tanks.map((tank) => {
-              const fuelType = getFuelType(tank.fuelType);
-              const percentage = (tank.currentLevel / tank.capacity) * 100;
-              const isLowLevel = tank.currentLevel <= tank.minLevel;
+                    <Button 
+                      onClick={() => handleSaveReading(pump.id, readings[pump.id] || (pump.currentReading || 0))}
+                      disabled={!readings[pump.id] || readings[pump.id] <= (pump.currentReading || 0)}
+                      className="w-full"
+                    >
+                      حفظ القراءة
+                    </Button>
+                  </div>
 
-              return (
-                <Card key={tank.id} className="bg-white">
-                  <CardHeader>
-                    <CardTitle className="flex items-center justify-between">
-                      <span>{t.tank} {tank.name}</span>
-                      {isLowLevel && (
-                        <Badge variant="destructive" className="flex items-center gap-1">
-                          <AlertTriangle className="h-3 w-3" />
-                          {t.lowLevel}
-                        </Badge>
-                      )}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="text-center">
-                      <Badge variant="outline" style={{ backgroundColor: tank.color + '20', color: tank.color }}>
-                        {fuelType?.name[language]}
-                      </Badge>
-                    </div>
-
-                    <div className="relative h-32 w-full border-2 border-muted rounded-md overflow-hidden">
-                      <div
-                        className="absolute bottom-0 w-full transition-all duration-500 ease-in-out"
-                        style={{
-                          height: `${percentage}%`,
-                          backgroundColor: tank.color,
-                        }}
-                      />
-                      <div className="absolute inset-0 flex flex-col justify-between py-2 pointer-events-none">
-                        {[...Array(4)].map((_, i) => (
-                          <div key={i} className="border-t border-dashed border-muted-foreground/30 w-full h-0" />
-                        ))}
+                  {/* إحصائيات اليوم */}
+                  <div className="border-t pt-3">
+                    <h4 className="font-medium mb-2">إحصائيات اليوم</h4>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <Label className="text-xs">اللترات المباعة</Label>
+                        <p className="font-mono">{(pump.dailySales?.liters || 0).toFixed(2)} لتر</p>
+                      </div>
+                      <div>
+                        <Label className="text-xs">إجمالي المبيعات</Label>
+                        <p className="font-mono text-green-600">{(pump.dailySales?.amount || 0).toFixed(2)} دج</p>
                       </div>
                     </div>
-
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span>{t.currentLevel}</span>
-                        <span className="font-mono">{tank.currentLevel.toLocaleString()} L</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>{t.capacity}</span>
-                        <span className="font-mono">{tank.capacity.toLocaleString()} L</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>%</span>
-                        <span className="font-mono">{percentage.toFixed(1)}%</span>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor={`tank-${tank.id}`}>{t.newLevel}</Label>
-                      <div className="flex gap-2">
-                        <Input
-                          id={`tank-${tank.id}`}
-                          type="number"
-                          value={tankUpdates[tank.id] || ''}
-                          onChange={(e) => setTankUpdates(prev => ({ ...prev, [tank.id]: e.target.value }))}
-                          placeholder={tank.currentLevel.toString()}
-                          className="font-mono"
-                        />
-                        <Button
-                          size="sm"
-                          onClick={() => handleUpdateTankLevel(tank.id)}
-                          disabled={!tankUpdates[tank.id]}
-                        >
-                          {t.updateLevel}
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </TabsContent>
-      </Tabs>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
-};
-
-export default FuelManagement;
+}
