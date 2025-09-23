@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useGasStationStore } from '@/store/gasStationStore';
-import { CreditCard, Plus, User, DollarSign, Calendar, AlertTriangle, Users, ShoppingBag, Trash2, Fuel, Coffee, Cigarette, Package, Gauge, Droplets } from 'lucide-react';
+import { CreditCard, Plus, User, DollarSign, Calendar, AlertTriangle, Users, ShoppingBag, Trash2, Fuel, Coffee, Cigarette, Package, Gauge, Droplets, Building2, FileCheck } from 'lucide-react';
 
 interface CreditManagementProps {
   language?: 'ar' | 'fr';
@@ -22,6 +22,8 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
     creditTransactions = [],
     pumps = [],
     tanks = [],
+    fuelTypes = [],
+    storeItems = [],
     addCustomer, 
     updateCustomer, 
     deleteCustomer,
@@ -47,17 +49,21 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
     productType: '',
     quantity: '',
     pumpId: '',
+    paymentMethod: 'cash' as 'cash' | 'cheque' | 'bank_transfer',
   });
 
   const [selectedCustomer, setSelectedCustomer] = useState<string>('');
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentDescription, setPaymentDescription] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'cheque' | 'bank_transfer'>('cash');
 
   // إضافة حالات للتحكم في علب الحوار
   const [showAddCustomerDialog, setShowAddCustomerDialog] = useState(false);
   const [showAddTransactionDialog, setShowAddTransactionDialog] = useState(false);
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [selectedCustomerForPayment, setSelectedCustomerForPayment] = useState<string>('');
+  const [showCustomerDetailsDialog, setShowCustomerDetailsDialog] = useState(false);
+  const [selectedCustomerForDetails, setSelectedCustomerForDetails] = useState<string>('');
 
   const isRTL = language === 'ar';
 
@@ -118,6 +124,10 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
       totalAmount: 'المبلغ الإجمالي',
       pumpReading: 'قراءة المضخة',
       tankLevel: 'مستوى الخزان',
+      paymentMethod: 'طريقة الدفع',
+      cash: 'نقدي',
+      cheque: 'شيك',
+      bankTransfer: 'تحويل بنكي',
     },
     fr: {
       title: 'Gestion des crédits et dettes',
@@ -175,34 +185,37 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
       totalAmount: 'Montant total',
       pumpReading: 'Lecture de la pompe',
       tankLevel: 'Niveau du réservoir',
+      paymentMethod: 'Mode de paiement',
+      cash: 'Espèces',
+      cheque: 'Chèque',
+      bankTransfer: 'Virement bancaire',
     },
   };
 
   const t = texts[language];
 
-  // أسعار الوقود الافتراضية
-  const fuelPrices = {
-    gasoline: 45.5,
-    diesel: 32.0
-  };
+  // Helpers to use real data
+  const getSelectedFuelType = () => fuelTypes.find(ft => ft.id === newTransaction.fuelType) || null;
+  const getSelectedPump = () => pumps.find(p => p.id === newTransaction.pumpId) || null;
+  const getSelectedProduct = () => storeItems.find(i => i.id === newTransaction.productType) || null;
+  const getItemUnitLabel = (unit: 'unit' | 'liter' | 'kg') => unit === 'liter' ? (language === 'ar' ? 'لتر' : 'L') : unit === 'kg' ? (language === 'ar' ? 'كغ' : 'kg') : (language === 'ar' ? 'علبة' : 'u');
 
-  // أسعار المنتجات الافتراضية
-  const productPrices = {
-    cigarettes: 450,
-    drinks: 120,
-    snacks: 80,
-    other: 100
+  const getFuelUnitPrice = () => {
+    const pump = getSelectedPump();
+    if (pump) return pump.sellPrice || 0;
+    const ft = getSelectedFuelType();
+    return ft?.pricePerLiter || 0;
   };
 
   const handleAddCustomer = () => {
-    if (newCustomer.name && newCustomer.creditLimit) {
+    if (newCustomer.name) {
       const customerId = Date.now().toString();
       addCustomer({
         id: customerId,
         name: newCustomer.name,
         phone: newCustomer.phone,
         address: newCustomer.address,
-        creditLimit: parseFloat(newCustomer.creditLimit),
+        creditLimit: 0,
         currentDebt: 0,
         creditBalance: 0,
         debtBalance: 0,
@@ -217,15 +230,37 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
   };
 
   const handleAddTransaction = () => {
-    if (newTransaction.customerId && newTransaction.amount && newTransaction.description) {
+    // Ensure required fields
+    if (!newTransaction.amount || !newTransaction.description) return;
+
+    // Determine customer to use (create if it's a new customer)
+    let customerIdToUse = newTransaction.customerId;
+    if (customerIdToUse === 'new_customer') {
+      if (!newCustomer.name) return; // must have a name for new customer
+      const customerId = Date.now().toString();
+      addCustomer({
+        id: customerId,
+        name: newCustomer.name,
+        phone: newCustomer.phone,
+        address: newCustomer.address,
+        creditLimit: 0,
+        currentDebt: 0,
+        creditBalance: 0,
+        debtBalance: 0,
+      });
+      customerIdToUse = customerId;
+    }
+
+    if (customerIdToUse) {
       const amount = parseFloat(newTransaction.amount);
       const quantity = newTransaction.quantity ? parseFloat(newTransaction.quantity) : 0;
       const transactionId = Date.now().toString();
 
-      // Build description based on type
+      // Build description based on type (use real names)
       let description = newTransaction.description;
       if (newTransaction.fuelType) {
-        description += ` - ${newTransaction.fuelType === 'gasoline' ? t.gasoline : t.diesel}`;
+        const ft = fuelTypes.find(f => f.id === newTransaction.fuelType);
+        description += ` - ${ft?.name?.[language] || ft?.name?.ar || ''}`;
         if (newTransaction.quantity) {
           description += ` (${newTransaction.quantity} ${t.liter})`;
         }
@@ -234,16 +269,10 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
           description += ` - ${t.pump} ${pump?.name || newTransaction.pumpId}`;
         }
       } else if (newTransaction.productType) {
-        const productName = {
-          cigarettes: t.cigarettes,
-          drinks: t.drinks,
-          snacks: t.snacks,
-          other: t.other
-        }[newTransaction.productType] || newTransaction.productType;
-        
-        description += ` - ${productName}`;
+        const product = storeItems.find(i => i.id === newTransaction.productType);
+        description += ` - ${product?.name || newTransaction.productType}`;
         if (newTransaction.quantity) {
-          const unit = newTransaction.productType === 'cigarettes' ? t.pack : t.piece;
+          const unit = product ? getItemUnitLabel(product.unit) : '';
           description += ` (${newTransaction.quantity} ${unit})`;
         }
       }
@@ -251,7 +280,7 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
       // Add transaction
       addCreditTransaction({
         id: transactionId,
-        customerId: newTransaction.customerId,
+        customerId: customerIdToUse,
         type: newTransaction.type,
         amount: amount,
         description: description,
@@ -260,21 +289,18 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
         productType: newTransaction.productType,
         quantity: quantity || undefined,
         pumpId: newTransaction.pumpId,
+        paymentMethod: newTransaction.type === 'payment' ? newTransaction.paymentMethod : undefined,
       });
 
       // Update customer debt
       const adjustedAmount = newTransaction.type === 'payment' ? -amount : amount;
-      updateCustomerDebt(newTransaction.customerId, adjustedAmount);
+      updateCustomerDebt(customerIdToUse, adjustedAmount);
       
-      // Update pump reading and tank level if fuel transaction
-      if (newTransaction.fuelType && newTransaction.pumpId && quantity > 0) {
-        // Update pump reading (add to current reading)
-        updatePumpReading(newTransaction.pumpId, quantity);
-        
-        // Update tank level (decrease from tank)
-        const tank = tanks.find(t => t.fuelType === newTransaction.fuelType);
-        if (tank) {
-          updateTankLevel(tank.id, -quantity);
+      // Update pump/tank if fuel transaction
+      if (newTransaction.type === 'debt' && newTransaction.fuelType && newTransaction.pumpId && quantity > 0) {
+        const pump = pumps.find(p => p.id === newTransaction.pumpId);
+        if (pump) {
+          updatePumpReading(newTransaction.pumpId, (pump.currentReading || 0) + quantity);
         }
       }
       
@@ -288,7 +314,9 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
         productType: '',
         quantity: '',
         pumpId: '',
+        paymentMethod: 'cash',
       });
+      setNewCustomer({ name: '', phone: '', address: '', creditLimit: '' });
       setShowAddTransactionDialog(false);
     }
   };
@@ -303,8 +331,9 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
         customerId,
         type: 'payment',
         amount,
-        description: paymentDescription || 'دفعة نقدية',
+        description: paymentDescription || (paymentMethod === 'cash' ? 'دفعة نقدية' : paymentMethod === 'cheque' ? 'دفعة بشيك' : 'تحويل بنكي'),
         date: new Date().toISOString().split('T')[0],
+        paymentMethod,
       });
 
       // Update customer debt (reduce debt)
@@ -312,6 +341,7 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
 
       setPaymentAmount('');
       setPaymentDescription('');
+      setPaymentMethod('cash');
       setShowPaymentDialog(false);
       setSelectedCustomerForPayment('');
     }
@@ -329,43 +359,46 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
     return totalDebt - totalPayments;
   };
 
-  const totalDebts = customers.reduce((sum, customer) => {
-    const balance = calculateCustomerBalance(customer.id);
-    return sum + (balance > 0 ? balance : 0);
-  }, 0);
+  const totalDebts = creditTransactions
+    .filter(t => t.type === 'debt')
+    .reduce((sum, t) => sum + t.amount, 0)
+    .toFixed(2);
 
-  const totalCredits = customers.reduce((sum, customer) => {
-    return sum + (customer.creditLimit || 0);
-  }, 0);
+  const totalCredits = creditTransactions
+    .filter(t => t.type === 'payment')
+    .reduce((sum, t) => sum + t.amount, 0)
+    .toFixed(2);
 
   const activeCustomers = customers.filter(customer => 
     calculateCustomerBalance(customer.id) !== 0
   ).length;
 
-  // Calculate total amount when quantity changes
+  // Calculate total amount when quantity changes (using real prices from selected pump/product)
   const calculateTotalAmount = () => {
-    if (newTransaction.fuelType && newTransaction.quantity) {
-      const price = fuelPrices[newTransaction.fuelType as keyof typeof fuelPrices];
+    if (newTransaction.fuelType && newTransaction.quantity && newTransaction.pumpId) {
+      const pump = getSelectedPump();
+      const price = pump?.sellPrice || 0;
       const quantity = parseFloat(newTransaction.quantity);
       return (price * quantity).toFixed(2);
     } else if (newTransaction.productType && newTransaction.quantity) {
-      const price = productPrices[newTransaction.productType as keyof typeof productPrices];
+      const product = getSelectedProduct();
+      const price = product?.sellPrice || 0;
       const quantity = parseFloat(newTransaction.quantity);
       return (price * quantity).toFixed(2);
     }
     return '';
   };
 
-  // Get available pumps for selected fuel type
+  // Get available pumps for selected fuel type (real pumps)
   const getAvailablePumps = () => {
     if (!newTransaction.fuelType) return [];
-    return pumps.filter(pump => pump.fuelType === newTransaction.fuelType);
+    return pumps.filter(pump => pump.fuelType === newTransaction.fuelType && pump.isActive);
   };
 
-  // Get tank info for selected fuel type
+  // Get tank info for selected fuel type (real tanks)
   const getTankInfo = () => {
     if (!newTransaction.fuelType) return null;
-    return tanks.find(tank => tank.fuelType === newTransaction.fuelType);
+    return tanks.find(tank => tank.fuelType === newTransaction.fuelType) || null;
   };
 
   // Check if quantity is valid (not exceeding tank capacity)
@@ -420,17 +453,24 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
                     placeholder="عنوان العميل"
                   />
                 </div>
-                <div>
-                  <Label>{t.creditLimit}</Label>
-                  <Input
-                    type="number"
-                    value={newCustomer.creditLimit}
-                    onChange={(e) => setNewCustomer(prev => ({ ...prev, creditLimit: e.target.value }))}
-                    placeholder="0.00"
-                  />
-                </div>
                 <div className="flex gap-2">
-                  <Button onClick={handleAddCustomer}>{t.save}</Button>
+                  <Button onClick={() => {
+                    if (newCustomer.name) {
+                      const customerId = Date.now().toString();
+                      addCustomer({
+                        id: customerId,
+                        name: newCustomer.name,
+                        phone: newCustomer.phone,
+                        address: newCustomer.address,
+                        creditLimit: 0,
+                        currentDebt: 0,
+                        creditBalance: 0,
+                        debtBalance: 0,
+                      });
+                      setNewCustomer({ name: '', phone: '', address: '', creditLimit: '' });
+                      setShowAddCustomerDialog(false);
+                    }
+                  }} disabled={!newCustomer.name}>{t.save}</Button>
                   <Button variant="outline" onClick={() => setShowAddCustomerDialog(false)}>{t.cancel}</Button>
                 </div>
               </div>
@@ -461,9 +501,26 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
                       <SelectContent>
                         {customers.map(customer => (
                           <SelectItem key={customer.id} value={customer.id}>
-                            {customer.name}
+                            <div className="flex items-center justify-between w-full gap-2">
+                              <span>{customer.name}</span>
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <span>{customer.phone}</span>
+                                <Badge variant={calculateCustomerBalance(customer.id) > 0 ? "destructive" : "default"} className="text-xs">
+                                  {calculateCustomerBalance(customer.id) > 0 
+                                    ? `دين: ${calculateCustomerBalance(customer.id).toFixed(2)} دج`
+                                    : "لا يوجد دين"
+                                  }
+                                </Badge>
+                              </div>
+                            </div>
                           </SelectItem>
                         ))}
+                        <SelectItem value="new_customer" className="border-t border-gray-200 mt-2 pt-2">
+                          <div className="flex items-center gap-2 text-blue-600 font-medium">
+                            <Plus className="h-4 w-4" />
+                            <span>عميل جديد</span>
+                          </div>
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -474,11 +531,8 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
                       setNewTransaction(prev => ({ 
                         ...prev, 
                         type: value,
-                        fuelType: '',
-                        productType: '',
-                        pumpId: '',
-                        quantity: '',
-                        amount: ''
+                        amount: '',
+                        paymentMethod: value === 'payment' ? 'cash' : 'cash'
                       }))
                     }>
                       <SelectTrigger>
@@ -492,228 +546,71 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
                   </div>
                 </div>
 
-                {/* Show fuel/product selection only for debt transactions */}
-                {newTransaction.type === 'debt' && (
-                  <div className="space-y-6">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label>{t.fuelType}</Label>
-                        <Select value={newTransaction.fuelType} onValueChange={(value) => 
-                          setNewTransaction(prev => ({ 
-                            ...prev, 
-                            fuelType: value, 
-                            productType: '', 
-                            pumpId: '',
-                            quantity: '',
-                            amount: ''
-                          }))
-                        }>
-                          <SelectTrigger>
-                            <SelectValue placeholder={t.selectFuelType} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="gasoline">
-                              <div className="flex items-center gap-2">
-                                <Fuel className="h-4 w-4 text-blue-500" />
-                                {t.gasoline} - {fuelPrices.gasoline} دج/{t.liter}
-                              </div>
-                            </SelectItem>
-                            <SelectItem value="diesel">
-                              <div className="flex items-center gap-2">
-                                <Fuel className="h-4 w-4 text-green-500" />
-                                {t.diesel} - {fuelPrices.diesel} دج/{t.liter}
-                              </div>
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div>
-                        <Label>{t.productType}</Label>
-                        <Select value={newTransaction.productType} onValueChange={(value) => 
-                          setNewTransaction(prev => ({ 
-                            ...prev, 
-                            productType: value, 
-                            fuelType: '',
-                            pumpId: '',
-                            quantity: '',
-                            amount: ''
-                          }))
-                        }>
-                          <SelectTrigger>
-                            <SelectValue placeholder={t.selectProductType} />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="cigarettes">
-                              <div className="flex items-center gap-2">
-                                <Cigarette className="h-4 w-4" />
-                                {t.cigarettes} - {productPrices.cigarettes} دج/{t.pack}
-                              </div>
-                            </SelectItem>
-                            <SelectItem value="drinks">
-                              <div className="flex items-center gap-2">
-                                <Coffee className="h-4 w-4" />
-                                {t.drinks} - {productPrices.drinks} دج/{t.piece}
-                              </div>
-                            </SelectItem>
-                            <SelectItem value="snacks">
-                              <div className="flex items-center gap-2">
-                                <Package className="h-4 w-4" />
-                                {t.snacks} - {productPrices.snacks} دج/{t.piece}
-                              </div>
-                            </SelectItem>
-                            <SelectItem value="other">
-                              <div className="flex items-center gap-2">
-                                <ShoppingBag className="h-4 w-4" />
-                                {t.other} - {productPrices.other} دج/{t.piece}
-                              </div>
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-
-                    {/* Show pump selection and tank info for fuel transactions */}
-                    {newTransaction.fuelType && (
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <Label>{t.selectPump}</Label>
-                            <Select value={newTransaction.pumpId} onValueChange={(value) => 
-                              setNewTransaction(prev => ({ ...prev, pumpId: value }))
-                            }>
-                              <SelectTrigger>
-                                <SelectValue placeholder={t.selectPump} />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {getAvailablePumps().map(pump => (
-                                  <SelectItem key={pump.id} value={pump.id}>
-                                    <div className="flex items-center gap-2">
-                                      <Gauge className="h-4 w-4" />
-                                      {pump.name} - {pump.currentReading.toFixed(2)} {t.liter}
-                                    </div>
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          {/* Show tank info */}
-                          <div>
-                            <Label>معلومات الخزان</Label>
-                            <div className="p-3 bg-slate-50 rounded-lg border">
-                              {getTankInfo() ? (
-                                <div className="space-y-1">
-                                  <div className="flex justify-between text-sm">
-                                    <span>المستوى الحالي:</span>
-                                    <span className="font-bold">{getTankInfo()?.currentLevel.toFixed(2)} {t.liter}</span>
-                                  </div>
-                                  <div className="flex justify-between text-sm">
-                                    <span>السعة الكاملة:</span>
-                                    <span>{getTankInfo()?.capacity.toFixed(2)} {t.liter}</span>
-                                  </div>
-                                </div>
-                              ) : (
-                                <span className="text-sm text-muted-foreground">اختر نوع الوقود أولاً</span>
-                              )}
-                            </div>
-                          </div>
+                {/* Show new customer form if "new_customer" is selected */}
+                {newTransaction.customerId === 'new_customer' && (
+                  <Card className="bg-blue-50 border-blue-200">
+                    <CardHeader>
+                      <CardTitle className="text-blue-800 flex items-center gap-2">
+                        <User className="h-5 w-5" />
+                        إضافة عميل جديد
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label>{t.customerName}</Label>
+                          <Input
+                            value={newCustomer.name}
+                            onChange={(e) => setNewCustomer(prev => ({ ...prev, name: e.target.value }))}
+                            placeholder="أدخل اسم العميل"
+                          />
+                        </div>
+                        <div>
+                          <Label>{t.phone}</Label>
+                          <Input
+                            value={newCustomer.phone}
+                            onChange={(e) => setNewCustomer(prev => ({ ...prev, phone: e.target.value }))}
+                            placeholder="05xxxxxxxx"
+                          />
                         </div>
                       </div>
-                    )}
-
-                    {/* Quantity and pricing section */}
-                    {(newTransaction.fuelType || newTransaction.productType) && (
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-3 gap-4">
-                          <div>
-                            <Label>{t.quantity}</Label>
-                            <Input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              value={newTransaction.quantity}
-                              onChange={(e) => {
-                                const quantity = e.target.value;
-                                let calculatedAmount = '';
-                                
-                                if (newTransaction.fuelType && quantity) {
-                                  const price = fuelPrices[newTransaction.fuelType as keyof typeof fuelPrices];
-                                  calculatedAmount = (parseFloat(quantity) * price).toFixed(2);
-                                } else if (newTransaction.productType && quantity) {
-                                  const price = productPrices[newTransaction.productType as keyof typeof productPrices];
-                                  calculatedAmount = (parseFloat(quantity) * price).toFixed(2);
-                                }
-                                
-                                setNewTransaction(prev => ({ 
-                                  ...prev, 
-                                  quantity,
-                                  amount: calculatedAmount
-                                }));
-                              }}
-                              placeholder={newTransaction.fuelType ? "الكمية بالليتر" : "عدد القطع"}
-                              className={!isQuantityValid() ? "border-red-500" : ""}
-                            />
-                            {!isQuantityValid() && (
-                              <p className="text-xs text-red-500 mt-1">
-                                الكمية تتجاوز المتوفر في الخزان
-                              </p>
-                            )}
-                          </div>
-
-                          <div>
-                            <Label>السعر للوحدة</Label>
-                            <Input
-                              type="number"
-                              value={
-                                newTransaction.fuelType 
-                                  ? fuelPrices[newTransaction.fuelType as keyof typeof fuelPrices]
-                                  : newTransaction.productType
-                                  ? productPrices[newTransaction.productType as keyof typeof productPrices]
-                                  : ''
-                              }
-                              disabled
-                              className="bg-gray-50"
-                            />
-                          </div>
-
-                          <div>
-                            <Label>{t.totalAmount}</Label>
-                            <Input
-                              type="number"
-                              value={calculateTotalAmount()}
-                              disabled
-                              className="bg-blue-50 font-bold text-blue-900"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Show calculated total in a prominent way */}
-                        {(newTransaction.fuelType || newTransaction.productType) && newTransaction.quantity && (
-                          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200">
-                            <div className="flex justify-between items-center">
-                              <div className="space-y-1">
-                                <span className="text-sm font-medium text-blue-800">ملخص المعاملة:</span>
-                                <div className="text-xs text-blue-600">
-                                  {newTransaction.quantity} × {
-                                    newTransaction.fuelType 
-                                      ? `${fuelPrices[newTransaction.fuelType as keyof typeof fuelPrices]} دج`
-                                      : `${productPrices[newTransaction.productType as keyof typeof productPrices]} دج`
-                                  }
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <span className="text-sm text-blue-600">المبلغ الإجمالي</span>
-                                <div className="text-2xl font-bold text-blue-900">
-                                  {calculateTotalAmount()} دج
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        )}
+                      <div className="flex gap-2">
+                        <Button 
+                          size="sm"
+                          onClick={() => {
+                            if (newCustomer.name) {
+                              const customerId = Date.now().toString();
+                              addCustomer({
+                                id: customerId,
+                                name: newCustomer.name,
+                                phone: newCustomer.phone,
+                                address: newCustomer.address,
+                                creditLimit: 0,
+                                currentDebt: 0,
+                                creditBalance: 0,
+                                debtBalance: 0,
+                              });
+                              setNewTransaction(prev => ({ ...prev, customerId }));
+                              setNewCustomer({ name: '', phone: '', address: '', creditLimit: '' });
+                            }
+                          }}
+                          disabled={!newCustomer.name}
+                        >
+                          حفظ العميل واستخدامه
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => {
+                            setNewTransaction(prev => ({ ...prev, customerId: '' }));
+                            setNewCustomer({ name: '', phone: '', address: '', creditLimit: '' });
+                          }}
+                        >
+                          إلغاء
+                        </Button>
                       </div>
-                    )}
-                  </div>
+                    </CardContent>
+                  </Card>
                 )}
 
                 <div>
@@ -724,14 +621,7 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
                     value={newTransaction.amount}
                     onChange={(e) => setNewTransaction(prev => ({ ...prev, amount: e.target.value }))}
                     placeholder="0.00"
-                    disabled={(newTransaction.fuelType || newTransaction.productType) && newTransaction.quantity}
-                    className={(newTransaction.fuelType || newTransaction.productType) && newTransaction.quantity ? "bg-gray-50" : ""}
                   />
-                  {(newTransaction.fuelType || newTransaction.productType) && newTransaction.quantity && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      المبلغ محسوب تلقائياً من الكمية والسعر
-                    </p>
-                  )}
                 </div>
 
                 <div>
@@ -743,10 +633,36 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
                   />
                 </div>
 
+                {newTransaction.type === 'payment' && (
+                  <div>
+                    <Label>{t.paymentMethod}</Label>
+                    <Select
+                      value={newTransaction.paymentMethod}
+                      onValueChange={(value: 'cash' | 'cheque' | 'bank_transfer') =>
+                        setNewTransaction(prev => ({ ...prev, paymentMethod: value }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="cash">{t.cash}</SelectItem>
+                        <SelectItem value="cheque">{t.cheque}</SelectItem>
+                        <SelectItem value="bank_transfer">{t.bankTransfer}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
                 <div className="flex gap-2">
                   <Button 
                     onClick={handleAddTransaction}
-                    disabled={!isQuantityValid() || !newTransaction.customerId || !newTransaction.amount || !newTransaction.description}
+                    disabled={
+                      !newTransaction.amount ||
+                      !newTransaction.description ||
+                      !newTransaction.customerId ||
+                      (newTransaction.customerId === 'new_customer' && !newCustomer.name)
+                    }
                   >
                     {t.save}
                   </Button>
@@ -760,6 +676,7 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
                       productType: '',
                       quantity: '',
                       pumpId: '',
+                      paymentMethod: 'cash',
                     });
                     setShowAddTransactionDialog(false);
                   }}>{t.cancel}</Button>
@@ -771,37 +688,89 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
       </div>
 
       {/* Summary Cards with Real Data */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <Card className="bg-gradient-to-r from-red-500 to-red-600 text-white border-0 shadow-lg">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">{t.totalDebt}</p>
-                <p className="text-2xl font-bold text-red-600">{totalDebts.toFixed(2)} دج</p>
+                <p className="text-red-100 text-sm font-medium">إجمالي الديون</p>
+                <p className="text-3xl font-bold">
+                  {creditTransactions
+                    .filter(t => t.type === 'debt')
+                    .reduce((sum, t) => sum + t.amount, 0)
+                    .toFixed(2)}
+                </p>
+                <p className="text-red-100 text-xs">دج</p>
               </div>
-              <DollarSign className="h-8 w-8 text-red-600" />
+              <DollarSign className="w-8 h-8 text-red-200" />
+            </div>
+            <div className="text-xs text-red-100 mt-2">
+              {customers.filter(c => calculateCustomerBalance(c.id) > 0).length} عميل مدين
             </div>
           </CardContent>
         </Card>
-        <Card>
+        
+        <Card className="bg-gradient-to-r from-green-500 to-green-600 text-white border-0 shadow-lg">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">العملاء النشطون</p>
-                <p className="text-2xl font-bold text-blue-600">{activeCustomers}</p>
+                <p className="text-green-100 text-sm font-medium">إجمالي المدفوعات</p>
+                <p className="text-3xl font-bold">
+                  {creditTransactions
+                    .filter(t => t.type === 'payment')
+                    .reduce((sum, t) => sum + t.amount, 0)
+                    .toFixed(2)}
+                </p>
+                <p className="text-green-100 text-xs">دج</p>
               </div>
-              <Users className="h-8 w-8 text-blue-600" />
+              <Users className="w-8 h-8 text-green-200" />
+            </div>
+            <div className="text-xs text-green-100 mt-2">
+              من أصل {customers.length} عميل
             </div>
           </CardContent>
         </Card>
-        <Card>
+        
+        <Card className="bg-gradient-to-r from-blue-500 to-blue-600 text-white border-0 shadow-lg">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">إجمالي العملاء</p>
-                <p className="text-2xl font-bold">{customers.length}</p>
+                <p className="text-blue-100 text-sm font-medium">إجمالي العملاء</p>
+                <p className="text-3xl font-bold">{customers.length}</p>
+                <p className="text-blue-100 text-xs">عميل</p>
               </div>
-              <User className="h-8 w-8 text-green-600" />
+              <User className="w-8 h-8 text-blue-200" />
+            </div>
+            <div className="text-xs text-blue-100 mt-2">
+              {creditTransactions.length} معاملة إجمالية
+            </div>
+          </CardContent>
+        </Card>
+        
+        <Card className="bg-gradient-to-r from-purple-500 to-purple-600 text-white border-0 shadow-lg">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-purple-100 text-sm font-medium">العملاء الجدد اليوم</p>
+                <p className="text-3xl font-bold">
+                  {(() => {
+                    const today = new Date().toDateString();
+                    return customers.filter(customer => {
+                      const customerDate = new Date(parseInt(customer.id)).toDateString();
+                      return customerDate === today;
+                    }).length;
+                  })()}
+                </p>
+                <p className="text-purple-100 text-xs">عميل</p>
+              </div>
+              <Plus className="w-8 h-8 text-purple-200" />
+            </div>
+            <div className="text-xs text-purple-100 mt-2">
+              {(() => {
+                const today = new Date().toISOString().split('T')[0];
+                const todayTransactions = creditTransactions.filter(t => t.date === today);
+                return `${todayTransactions.length} معاملة اليوم`;
+              })()}
             </div>
           </CardContent>
         </Card>
@@ -836,8 +805,33 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
                   .filter(t => t.type === 'payment')
                   .reduce((sum, t) => sum + t.amount, 0);
 
+                // حساب إحصائيات طرق الدفع
+                const paymentMethods = customerTransactions
+                  .filter(t => t.type === 'payment')
+                  .reduce((acc, t) => {
+                    const method = t.paymentMethod || 'cash';
+                    acc[method] = (acc[method] || 0) + t.amount;
+                    return acc;
+                  }, {} as Record<string, number>);
+
+                const getPaymentMethodIcon = (method: string) => {
+                  switch (method) {
+                    case 'cheque': return <FileCheck className="h-3 w-3" />;
+                    case 'bank_transfer': return <Building2 className="h-3 w-3" />;
+                    default: return <DollarSign className="h-3 w-3" />;
+                  }
+                };
+
+                const getPaymentMethodText = (method: string) => {
+                  switch (method) {
+                    case 'cheque': return 'شيك';
+                    case 'bank_transfer': return 'تحويل بنكي';
+                    default: return 'نقدي';
+                  }
+                };
+
                 return (
-                  <Card key={customer.id} className="bg-white">
+                  <Card key={customer.id} className="bg-white shadow-lg hover:shadow-xl transition-shadow">
                     <CardHeader>
                       <CardTitle className="flex items-center justify-between">
                         <span>{customer.name}</span>
@@ -847,7 +841,11 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
                           </Badge>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700">
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="text-red-600 hover:text-red-700"
+                              >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
                             </AlertDialogTrigger>
@@ -872,23 +870,11 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
                         </div>
                       </CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-3">
+                    <CardContent className="space-y-4">
                       <div className="space-y-2">
                         <div className="flex justify-between items-center">
                           <span className="text-sm text-muted-foreground">{t.phone}</span>
                           <span className="font-mono">{customer.phone}</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm text-muted-foreground">إجمالي الديون</span>
-                          <span className="font-bold text-red-600">
-                            {totalDebt.toFixed(2)} دج
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm text-muted-foreground">إجمالي المدفوعات</span>
-                          <span className="font-bold text-green-600">
-                            {totalPayments.toFixed(2)} دج
-                          </span>
                         </div>
                         <div className="flex justify-between items-center border-t pt-2">
                           <span className="text-sm font-medium">الرصيد الحالي</span>
@@ -900,72 +886,61 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
                         </div>
                       </div>
 
+                      {/* عرض طرق الدفع المستخدمة */}
+                      {Object.keys(paymentMethods).length > 0 && (
+                        <div className="border-t pt-3">
+                          <p className="text-sm font-medium text-gray-700 mb-2">طرق الدفع المستخدمة:</p>
+                          <div className="space-y-2">
+                            {Object.entries(paymentMethods).map(([method, amount]) => (
+                              <div key={method} className="flex items-center justify-between text-xs">
+                                <div className="flex items-center gap-1">
+                                  {getPaymentMethodIcon(method)}
+                                  <span>{getPaymentMethodText(method)}</span>
+                                </div>
+                                <span className="font-medium text-green-600">
+                                  {amount.toFixed(2)} دج
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* إحصائيات سريعة */}
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="bg-red-50 p-2 rounded text-center">
+                          <p className="text-red-600 font-medium">إجمالي الديون</p>
+                          <p className="text-red-700 font-bold">{totalDebt.toFixed(2)} دج</p>
+                        </div>
+                        <div className="bg-green-50 p-2 rounded text-center">
+                          <p className="text-green-600 font-medium">إجمالي المدفوعات</p>
+                          <p className="text-green-700 font-bold">{totalPayments.toFixed(2)} دج</p>
+                        </div>
+                      </div>
+
                       <div className="flex gap-2">
-                        <Dialog open={showPaymentDialog && selectedCustomerForPayment === customer.id} onOpenChange={(open) => {
-                          setShowPaymentDialog(open);
-                          if (!open) {
-                            setSelectedCustomerForPayment('');
-                            setPaymentAmount('');
-                            setPaymentDescription('');
-                          }
-                        }}>
-                          <DialogTrigger asChild>
-                            <Button 
-                              size="sm" 
-                              className="flex-1"
-                              onClick={() => {
-                                setSelectedCustomerForPayment(customer.id);
-                                setShowPaymentDialog(true);
-                              }}
-                            >
-                              {t.addPayment}
-                            </Button>
-                          </DialogTrigger>
-                          <DialogContent>
-                            <DialogHeader>
-                              <DialogTitle>{t.addPayment} - {customer.name}</DialogTitle>
-                            </DialogHeader>
-                            <div className="space-y-4">
-                              <div>
-                                <Label>{t.amount}</Label>
-                                <Input
-                                  type="number"
-                                  value={paymentAmount}
-                                  onChange={(e) => setPaymentAmount(e.target.value)}
-                                  placeholder="0.00"
-                                />
-                              </div>
-                              <div>
-                                <Label>{t.description}</Label>
-                                <Input
-                                  value={paymentDescription}
-                                  onChange={(e) => setPaymentDescription(e.target.value)}
-                                  placeholder="وصف الدفعة..."
-                                />
-                              </div>
-                              <div className="flex gap-2">
-                                <Button
-                                  onClick={() => handleAddPayment(customer.id)}
-                                  disabled={!paymentAmount || parseFloat(paymentAmount) <= 0}
-                                  className="flex-1"
-                                >
-                                  {t.save}
-                                </Button>
-                                <Button 
-                                  variant="outline" 
-                                  onClick={() => {
-                                    setShowPaymentDialog(false);
-                                    setSelectedCustomerForPayment('');
-                                    setPaymentAmount('');
-                                    setPaymentDescription('');
-                                  }}
-                                >
-                                  {t.cancel}
-                                </Button>
-                              </div>
-                            </div>
-                          </DialogContent>
-                        </Dialog>
+                        <Button 
+                          size="sm" 
+                          className="flex-1"
+                          onClick={() => {
+                            setSelectedCustomerForPayment(customer.id);
+                            setShowPaymentDialog(true);
+                          }}
+                        >
+                          {t.addPayment}
+                        </Button>
+                        
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          className="flex-1"
+                          onClick={() => {
+                            setSelectedCustomerForDetails(customer.id);
+                            setShowCustomerDetailsDialog(true);
+                          }}
+                        >
+                          عرض السجل
+                        </Button>
                       </div>
                     </CardContent>
                   </Card>
@@ -991,28 +966,85 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
               {creditTransactions.slice(-20).reverse().map((transaction) => {
                 const customer = customers.find(c => c.id === transaction.customerId);
                 const pump = transaction.pumpId ? pumps.find(p => p.id === transaction.pumpId) : null;
+                const product = transaction.productType ? storeItems.find(i => i.id === transaction.productType) : null;
+                
+                // تحديد أيقونة طريقة الدفع
+                const getPaymentMethodIcon = (method?: string) => {
+                  switch (method) {
+                    case 'cheque':
+                      return <FileCheck className="h-3 w-3 mr-1" />;
+                    case 'bank_transfer':
+                      return <Building2 className="h-3 w-3 mr-1" />;
+                    case 'cash':
+                    default:
+                      return <DollarSign className="h-3 w-3 mr-1" />;
+                  }
+                };
+
+                const getPaymentMethodText = (method?: string) => {
+                  switch (method) {
+                    case 'cheque':
+                      return 'شيك';
+                    case 'bank_transfer':
+                      return 'تحويل بنكي';
+                    case 'cash':
+                    default:
+                      return 'نقدي';
+                  }
+                };
+
+                const getPaymentMethodColor = (method?: string) => {
+                  switch (method) {
+                    case 'cheque':
+                      return 'bg-purple-50 text-purple-700 border-purple-200';
+                    case 'bank_transfer':
+                      return 'bg-blue-50 text-blue-700 border-blue-200';
+                    case 'cash':
+                    default:
+                      return 'bg-green-50 text-green-700 border-green-200';
+                  }
+                };
                 
                 return (
-                  <Card key={transaction.id} className="bg-white">
+                  <Card key={transaction.id} className="bg-white shadow-sm hover:shadow-md transition-shadow">
                     <CardContent className="p-4">
                       <div className="flex justify-between items-start">
                         <div className="space-y-2 flex-1">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-medium">{customer?.name || 'عميل غير معروف'}</p>
+                            
+                            {/* نوع المعاملة */}
+                            <Badge variant={transaction.type === 'debt' ? 'destructive' : 'default'}>
+                              {transaction.type === 'debt' ? t.debt : t.payment}
+                            </Badge>
+
+                            {/* طريقة الدفع للمدفوعات */}
+                            {transaction.type === 'payment' && transaction.paymentMethod && (
+                              <Badge variant="outline" className={`text-xs ${getPaymentMethodColor(transaction.paymentMethod)}`}>
+                                {getPaymentMethodIcon(transaction.paymentMethod)}
+                                {getPaymentMethodText(transaction.paymentMethod)}
+                              </Badge>
+                            )}
+
+                            {/* نوع الوقود */}
                             {transaction.fuelType && (
-                              <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                              <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
                                 <Fuel className="h-3 w-3 mr-1" />
-                                {transaction.fuelType === 'gasoline' ? t.gasoline : t.diesel}
+                                {fuelTypes.find(f => f.id === transaction.fuelType)?.name?.[language] || '—'}
                               </Badge>
                             )}
+
+                            {/* نوع المنتج */}
                             {transaction.productType && (
-                              <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
+                              <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200">
                                 <ShoppingBag className="h-3 w-3 mr-1" />
-                                {transaction.productType}
+                                {product?.name || '—'}
                               </Badge>
                             )}
+
+                            {/* المضخة */}
                             {pump && (
-                              <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200">
+                              <Badge variant="outline" className="text-xs bg-indigo-50 text-indigo-700 border-indigo-200">
                                 <Gauge className="h-3 w-3 mr-1" />
                                 {pump.name}
                               </Badge>
@@ -1029,11 +1061,36 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
                               {transaction.quantity && (
                                 <span className="flex items-center gap-1">
                                   <Droplets className="h-3 w-3" />
-                                  {transaction.quantity} {transaction.fuelType ? t.liter : t.piece}
+                                  {transaction.quantity} {transaction.fuelType ? t.liter : (product ? getItemUnitLabel(product.unit) : '')}
                                 </span>
                               )}
                             </div>
                           </div>
+
+                          {/* معلومات إضافية للمدفوعات غير النقدية */}
+                          {transaction.type === 'payment' && transaction.paymentMethod !== 'cash' && (
+                            <div className={`p-3 rounded-lg border-r-4 ${
+                              transaction.paymentMethod === 'cheque' 
+                                ? 'bg-purple-50 border-r-purple-400' 
+                                : 'bg-blue-50 border-r-blue-400'
+                            }`}>
+                              <div className="flex items-center gap-2 text-sm">
+                                {getPaymentMethodIcon(transaction.paymentMethod)}
+                                <span className="font-medium">
+                                  {transaction.paymentMethod === 'cheque' 
+                                    ? 'دفعة بشيك - يتطلب تأكيد الصرف' 
+                                    : 'تحويل بنكي - يتطلب تأكيد الاستلام'
+                                  }
+                                </span>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {transaction.paymentMethod === 'cheque' 
+                                  ? 'سيتم إضافة هذا المبلغ للسيولة عند صرف الشيك'
+                                  : 'سيتم إضافة هذا المبلغ للسيولة عند تأكيد التحويل'
+                                }
+                              </p>
+                            </div>
+                          )}
 
                           <div className="bg-slate-50 p-3 rounded border-l-4 border-l-slate-300">
                             <div className="flex justify-between items-center text-sm">
@@ -1051,14 +1108,16 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
                         </div>
                         
                         <div className="text-right ml-4">
-                          <Badge variant={transaction.type === 'debt' ? 'destructive' : 'default'} className="mb-2">
-                            {transaction.type === 'debt' ? t.debt : t.payment}
-                          </Badge>
                           <p className={`font-bold text-xl ${
                             transaction.type === 'debt' ? 'text-red-600' : 'text-green-600'
                           }`}>
                             {transaction.type === 'debt' ? '+' : '-'}{transaction.amount.toFixed(2)} دج
                           </p>
+                          {transaction.type === 'payment' && transaction.paymentMethod !== 'cash' && (
+                            <p className="text-xs text-amber-600 font-medium mt-1">
+                              {transaction.paymentMethod === 'cheque' ? 'في انتظار الصرف' : 'في انتظار التأكيد'}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </CardContent>
@@ -1069,6 +1128,457 @@ export const CreditManagement: React.FC<CreditManagementProps> = ({ language = '
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Today's Transactions Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Today's Debts */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5" />
+              سجل الديون اليوم
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {(() => {
+              const today = new Date().toISOString().split('T')[0];
+              const todayDebts = creditTransactions.filter(t => 
+                t.type === 'debt' && t.date === today
+              );
+              const totalTodayDebts = todayDebts.reduce((sum, t) => sum + t.amount, 0);
+
+              return (
+                <div className="space-y-4">
+                  <div className="bg-red-50 p-4 rounded-lg border border-red-200">
+                    <div className="text-center">
+                      <p className="text-sm text-red-600 font-medium">إجمالي ديون اليوم</p>
+                      <p className="text-3xl font-bold text-red-700">{totalTodayDebts.toFixed(2)} دج</p>
+                      <p className="text-xs text-red-500 mt-1">({todayDebts.length} معاملة)</p>
+                    </div>
+                  </div>
+                  
+                  {todayDebts.length === 0 ? (
+                    <div className="text-center py-6">
+                      <Calendar className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">لا توجد ديون اليوم</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      {todayDebts.slice().reverse().map((transaction) => {
+                        const customer = customers.find(c => c.id === transaction.customerId);
+                        return (
+                          <div key={transaction.id} className="bg-white border rounded-lg p-3 hover:shadow-sm transition-shadow">
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <p className="font-medium text-sm">{customer?.name || 'عميل غير معروف'}</p>
+                                  <Badge variant="destructive" className="text-xs">دين</Badge>
+                                </div>
+                                <p className="text-xs text-muted-foreground mb-2">{transaction.description}</p>
+                                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                  <span className="flex items-center gap-1">
+                                    <Calendar className="h-3 w-3" />
+                                    {new Date(transaction.date).toLocaleDateString('ar-SA')}
+                                  </span>
+                                  {transaction.quantity && (
+                                    <span className="flex items-center gap-1">
+                                      <Droplets className="h-3 w-3" />
+                                      {transaction.quantity} لتر
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="text-right ml-3">
+                                <p className="font-bold text-lg text-red-600">+{transaction.amount.toFixed(2)} دج</p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </CardContent>
+        </Card>
+
+        {/* Today's Payments */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-green-600">
+              <DollarSign className="h-5 w-5" />
+              سجل المدفوعات اليوم
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {(() => {
+              const today = new Date().toISOString().split('T')[0];
+              const todayPayments = creditTransactions.filter(t => 
+                t.type === 'payment' && t.date === today
+              );
+              const totalTodayPayments = todayPayments.reduce((sum, t) => sum + t.amount, 0);
+
+              return (
+                <div className="space-y-4">
+                  <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                    <div className="text-center">
+                      <p className="text-sm text-green-600 font-medium">إجمالي مدفوعات اليوم</p>
+                      <p className="text-3xl font-bold text-green-700">{totalTodayPayments.toFixed(2)} دج</p>
+                      <p className="text-xs text-green-500 mt-1">({todayPayments.length} معاملة)</p>
+                    </div>
+                  </div>
+                  
+                  {todayPayments.length === 0 ? (
+                    <div className="text-center py-6">
+                      <Calendar className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">لا توجد مدفوعات اليوم</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      {todayPayments.slice().reverse().map((transaction) => {
+                        const customer = customers.find(c => c.id === transaction.customerId);
+                        return (
+                          <div key={transaction.id} className="bg-white border rounded-lg p-3 hover:shadow-sm transition-shadow">
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <p className="font-medium text-sm">{customer?.name || 'عميل غير معروف'}</p>
+                                  <Badge variant="default" className="text-xs bg-green-100 text-green-700 border-green-300">دفعة</Badge>
+                                </div>
+                                <p className="text-xs text-muted-foreground mb-2">{transaction.description}</p>
+                                <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                                  <span className="flex items-center gap-1">
+                                    <Calendar className="h-3 w-3" />
+                                    {new Date(transaction.date).toLocaleDateString('ar-SA')}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="text-right ml-3">
+                                <p className="font-bold text-lg text-green-600">-{transaction.amount.toFixed(2)} دج</p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Customer Details Dialog */}
+      <Dialog open={showCustomerDetailsDialog} onOpenChange={setShowCustomerDetailsDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <User className="h-5 w-5" />
+              تفاصيل العميل - {customers.find(c => c.id === selectedCustomerForDetails)?.name}
+            </DialogTitle>
+          </DialogHeader>
+          
+          {selectedCustomerForDetails && (() => {
+            const customer = customers.find(c => c.id === selectedCustomerForDetails);
+            const customerTransactions = creditTransactions.filter(t => t.customerId === selectedCustomerForDetails);
+            const currentBalance = calculateCustomerBalance(selectedCustomerForDetails);
+            const totalDebt = customerTransactions.filter(t => t.type === 'debt').reduce((sum, t) => sum + t.amount, 0);
+            const totalPayments = customerTransactions.filter(t => t.type === 'payment').reduce((sum, t) => sum + t.amount, 0);
+            
+            return (
+              <div className="space-y-6">
+                {/* Customer Summary */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <Card className="bg-red-50 border-red-200">
+                    <CardContent className="p-4">
+                      <div className="text-center">
+                        <p className="text-sm text-red-600 font-medium">إجمالي الديون</p>
+                        <p className="text-2xl font-bold text-red-700">{totalDebt.toFixed(2)} دج</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  
+                  <Card className="bg-green-50 border-green-200">
+                    <CardContent className="p-4">
+                      <div className="text-center">
+                        <p className="text-sm text-green-600 font-medium">إجمالي المدفوعات</p>
+                        <p className="text-2xl font-bold text-green-700">{totalPayments.toFixed(2)} دج</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  
+                  <Card className={`${currentBalance > 0 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
+                    <CardContent className="p-4">
+                      <div className="text-center">
+                        <p className={`text-sm font-medium ${currentBalance > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                          الرصيد الحالي
+                        </p>
+                        <p className={`text-2xl font-bold ${currentBalance > 0 ? 'text-red-700' : 'text-green-700'}`}>
+                          {currentBalance > 0 ? '+' : ''}{currentBalance.toFixed(2)} دج
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Customer Info */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">معلومات العميل</CardTitle>
+                  </CardHeader>
+                  <CardContent className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-sm text-muted-foreground">الاسم</Label>
+                      <p className="font-medium">{customer?.name}</p>
+                    </div>
+                    <div>
+                      <Label className="text-sm text-muted-foreground">الهاتف</Label>
+                      <p className="font-mono">{customer?.phone || '—'}</p>
+                    </div>
+                    <div className="col-span-2">
+                      <Label className="text-sm text-muted-foreground">العنوان</Label>
+                      <p>{customer?.address || '—'}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Transaction History */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Calendar className="h-5 w-5" />
+                      سجل المعاملات ({customerTransactions.length} معاملة)
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {customerTransactions.length === 0 ? (
+                      <div className="text-center py-8">
+                        <Calendar className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                        <p className="text-muted-foreground">لا توجد معاملات لهذا العميل</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3 max-h-96 overflow-y-auto">
+                        {customerTransactions.reverse().map((transaction) => {
+                          const pump = transaction.pumpId ? pumps.find(p => p.id === transaction.pumpId) : null;
+                          const product = transaction.productType ? storeItems.find(i => i.id === transaction.productType) : null;
+                          
+                          // تحديد أيقونة ونص طريقة الدفع
+                          const getPaymentMethodIcon = (method?: string) => {
+                            switch (method) {
+                              case 'cheque':
+                                return <FileCheck className="h-3 w-3 mr-1" />;
+                              case 'bank_transfer':
+                                return <Building2 className="h-3 w-3 mr-1" />;
+                              case 'cash':
+                              default:
+                                return <DollarSign className="h-3 w-3 mr-1" />;
+                            }
+                          };
+
+                          const getPaymentMethodText = (method?: string) => {
+                            switch (method) {
+                              case 'cheque':
+                                return 'شيك';
+                              case 'bank_transfer':
+                                return 'تحويل بنكي';
+                              case 'cash':
+                              default:
+                                return 'نقدي';
+                            }
+                          };
+
+                          const getPaymentMethodColor = (method?: string) => {
+                            switch (method) {
+                              case 'cheque':
+                                return 'bg-purple-50 text-purple-700 border-purple-200';
+                              case 'bank_transfer':
+                                return 'bg-blue-50 text-blue-700 border-blue-200';
+                              case 'cash':
+                              default:
+                                return 'bg-green-50 text-green-700 border-green-200';
+                            }
+                          };
+                          
+                          return (
+                            <div key={transaction.id} className="border rounded-lg p-4 bg-white hover:shadow-sm transition-shadow">
+                              <div className="flex justify-between items-start">
+                                <div className="space-y-2 flex-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <Badge variant={transaction.type === 'debt' ? 'destructive' : 'default'}>
+                                      {transaction.type === 'debt' ? t.debt : t.payment}
+                                    </Badge>
+
+                                    {/* عرض طريقة الدفع للمدفوعات */}
+                                    {transaction.type === 'payment' && transaction.paymentMethod && (
+                                      <Badge variant="outline" className={`text-xs ${getPaymentMethodColor(transaction.paymentMethod)}`}>
+                                        {getPaymentMethodIcon(transaction.paymentMethod)}
+                                        {getPaymentMethodText(transaction.paymentMethod)}
+                                      </Badge>
+                                    )}
+
+                                    {transaction.fuelType && (
+                                      <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                                        <Fuel className="h-3 w-3 mr-1" />
+                                        {fuelTypes.find(f => f.id === transaction.fuelType)?.name?.[language] || '—'}
+                                      </Badge>
+                                    )}
+                                    {transaction.productType && (
+                                      <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200">
+                                        <ShoppingBag className="h-3 w-3 mr-1" />
+                                        {product?.name || '—'}
+                                      </Badge>
+                                    )}
+                                    {pump && (
+                                      <Badge variant="outline" className="text-xs bg-indigo-50 text-indigo-700 border-indigo-200">
+                                        <Gauge className="h-3 w-3 mr-1" />
+                                        {pump.name}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  
+                                  <p className="text-sm text-muted-foreground">{transaction.description}</p>
+                                  
+                                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                    <span className="flex items-center gap-1">
+                                      <Calendar className="h-3 w-3" />
+                                      {new Date(transaction.date).toLocaleDateString('ar-SA')}
+                                    </span>
+                                    {transaction.quantity && (
+                                      <span className="flex items-center gap-1">
+                                        <Droplets className="h-3 w-3" />
+                                        {transaction.quantity} {transaction.fuelType ? t.liter : (product ? getItemUnitLabel(product.unit) : '')}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {/* معلومات إضافية للمدفوعات غير النقدية */}
+                                  {transaction.type === 'payment' && transaction.paymentMethod !== 'cash' && (
+                                    <div className={`p-3 rounded-lg border-r-4 ${
+                                      transaction.paymentMethod === 'cheque' 
+                                        ? 'bg-purple-50 border-r-purple-400' 
+                                        : 'bg-blue-50 border-r-blue-400'
+                                    }`}>
+                                      <div className="flex items-center gap-2 text-sm">
+                                        {getPaymentMethodIcon(transaction.paymentMethod)}
+                                        <span className="font-medium">
+                                          {transaction.paymentMethod === 'cheque' 
+                                            ? 'دفعة بشيك - يتطلب تأكيد الصرف' 
+                                            : 'تحويل بنكي - يتطلب تأكيد الاستلام'
+                                          }
+                                        </span>
+                                      </div>
+                                      <p className="text-xs text-muted-foreground mt-1">
+                                        {transaction.paymentMethod === 'cheque' 
+                                          ? 'سيتم إضافة هذا المبلغ للسيولة عند صرف الشيك'
+                                          : 'سيتم إضافة هذا المبلغ للسيولة عند تأكيد التحويل'
+                                        }
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                                
+                                <div className="text-right ml-4">
+                                  <p className={`font-bold text-xl ${
+                                    transaction.type === 'debt' ? 'text-red-600' : 'text-green-600'
+                                  }`}>
+                                    {transaction.type === 'debt' ? '+' : '-'}{transaction.amount.toFixed(2)} دج
+                                  </p>
+                                  {transaction.type === 'payment' && transaction.paymentMethod !== 'cash' && (
+                                    <p className="text-xs text-amber-600 font-medium mt-1">
+                                      {transaction.paymentMethod === 'cheque' ? 'في انتظار الصرف' : 'في انتظار التأكيد'}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <div className="flex justify-end">
+                  <Button variant="outline" onClick={() => setShowCustomerDetailsDialog(false)}>
+                    إغلاق
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showPaymentDialog && selectedCustomerForPayment !== ''} onOpenChange={(open) => {
+        if (!open) {
+          setShowPaymentDialog(false);
+          setSelectedCustomerForPayment('');
+          setPaymentAmount('');
+          setPaymentDescription('');
+          setPaymentMethod('cash');
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t.addPayment} - {customers.find(c => c.id === selectedCustomerForPayment)?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>{t.amount}</Label>
+              <Input
+                type="number"
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(e.target.value)}
+                placeholder="0.00"
+              />
+            </div>
+            <div>
+              <Label>{t.description}</Label>
+              <Input
+                value={paymentDescription}
+                onChange={(e) => setPaymentDescription(e.target.value)}
+                placeholder="وصف الدفعة..."
+              />
+            </div>
+            <div>
+              <Label>{t.paymentMethod}</Label>
+              <Select value={paymentMethod} onValueChange={(v: 'cash' | 'cheque' | 'bank_transfer') => setPaymentMethod(v)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">{t.cash}</SelectItem>
+                  <SelectItem value="cheque">{t.cheque}</SelectItem>
+                  <SelectItem value="bank_transfer">{t.bankTransfer}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => handleAddPayment(selectedCustomerForPayment)}
+                disabled={!paymentAmount || parseFloat(paymentAmount) <= 0}
+                className="flex-1"
+              >
+                {t.save}
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowPaymentDialog(false);
+                  setSelectedCustomerForPayment('');
+                  setPaymentAmount('');
+                  setPaymentDescription('');
+                  setPaymentMethod('cash');
+                }}
+              >
+                {t.cancel}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

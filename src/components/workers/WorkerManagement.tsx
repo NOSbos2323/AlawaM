@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useGasStationStore } from '@/store/gasStationStore';
 import { Users, Plus, DollarSign, Calendar, User, Briefcase } from 'lucide-react';
 
@@ -42,6 +43,10 @@ const WorkerManagement: React.FC<WorkerManagementProps> = ({ language = 'ar' }) 
 
   const [showAddWorkerDialog, setShowAddWorkerDialog] = useState(false);
   const [showAddPaymentDialog, setShowAddPaymentDialog] = useState(false);
+  const [showAdvancePaymentDialog, setShowAdvancePaymentDialog] = useState(false);
+  const [selectedWorkerId, setSelectedWorkerId] = useState('');
+  const [showPaymentConfirmDialog, setShowPaymentConfirmDialog] = useState(false);
+  const [paymentDetails, setPaymentDetails] = useState({ workerId: '', netSalary: 0, totalAdvances: 0, fullSalary: 0 });
 
   const isRTL = language === 'ar';
 
@@ -52,6 +57,7 @@ const WorkerManagement: React.FC<WorkerManagementProps> = ({ language = 'ar' }) 
       salaries: 'الرواتب',
       addWorker: 'إضافة عامل',
       addPayment: 'إضافة راتب',
+      advancePayment: 'مصاريف مسبقة',
       workerName: 'اسم العامل',
       position: 'المنصب',
       salary: 'الراتب',
@@ -77,6 +83,17 @@ const WorkerManagement: React.FC<WorkerManagementProps> = ({ language = 'ar' }) 
       status: 'الحالة',
       active: 'نشط',
       inactive: 'غير نشط',
+      monthEnded: 'انتهى الشهر',
+      unpaid: 'غير مخلص',
+      markAsPaid: 'تعديل كمخلص',
+      confirmPayment: 'تأكيد الدفع',
+      paymentConfirmation: 'تأكيد دفع الراتب',
+      fullSalary: 'الراتب الكامل',
+      advanceDeduction: 'خصم المصاريف المسبقة',
+      netAmount: 'المبلغ الصافي',
+      confirmPaymentText: 'هل تريد دفع الراتب للعامل؟',
+      totalAdvances: 'إجمالي المصاريف المسبقة',
+      lastPayments: 'آخر المدفوعات',
     },
     fr: {
       title: 'Gestion du personnel',
@@ -84,6 +101,7 @@ const WorkerManagement: React.FC<WorkerManagementProps> = ({ language = 'ar' }) 
       salaries: 'Salaires',
       addWorker: 'Ajouter un employé',
       addPayment: 'Ajouter un paiement',
+      advancePayment: 'Avance sur salaire',
       workerName: 'Nom de l\'employé',
       position: 'Poste',
       salary: 'Salaire',
@@ -109,6 +127,17 @@ const WorkerManagement: React.FC<WorkerManagementProps> = ({ language = 'ar' }) 
       status: 'Statut',
       active: 'Actif',
       inactive: 'Inactif',
+      monthEnded: 'Mois terminé',
+      unpaid: 'Non payé',
+      markAsPaid: 'Marquer comme payé',
+      confirmPayment: 'Confirmer le paiement',
+      paymentConfirmation: 'Confirmation de paiement',
+      fullSalary: 'Salaire complet',
+      advanceDeduction: 'Déduction avances',
+      netAmount: 'Montant net',
+      confirmPaymentText: 'Voulez-vous payer le salaire de l\'employé?',
+      totalAdvances: 'Total des avances',
+      lastPayments: 'Derniers paiements',
     },
   };
 
@@ -128,6 +157,7 @@ const WorkerManagement: React.FC<WorkerManagementProps> = ({ language = 'ar' }) 
         status: 'active',
       });
       setNewWorker({ name: '', position: '', salary: '', phone: '', address: '', hireDate: '' });
+      setShowAddWorkerDialog(false);
     }
   };
 
@@ -144,16 +174,132 @@ const WorkerManagement: React.FC<WorkerManagementProps> = ({ language = 'ar' }) 
         notes: newPayment.notes,
       });
       setNewPayment({ workerId: '', amount: '', month: '', year: '', notes: '' });
+      setShowAddPaymentDialog(false);
     }
+  };
+
+  const handleAdvancePayment = () => {
+    if (selectedWorkerId && newPayment.amount) {
+      const paymentId = Date.now().toString();
+      addSalaryPayment({
+        id: paymentId,
+        workerId: selectedWorkerId,
+        amount: parseFloat(newPayment.amount),
+        month: 'advance',
+        year: new Date().getFullYear(),
+        date: new Date().toISOString().split('T')[0],
+        notes: newPayment.notes || 'مصاريف مسبقة',
+      });
+      setNewPayment({ workerId: '', amount: '', month: '', year: '', notes: '' });
+      setSelectedWorkerId('');
+      setShowAdvancePaymentDialog(false);
+    }
+  };
+
+  const handleMarkAsPaid = (workerId: string) => {
+    const worker = workers.find(w => w.id === workerId);
+    
+    if (worker) {
+      // حساب إجمالي المصاريف المسبقة للعامل
+      const advancePayments = salaryPayments.filter(p => 
+        p.workerId === workerId && p.month === 'advance'
+      );
+      const totalAdvances = advancePayments.reduce((sum, payment) => sum + payment.amount, 0);
+      
+      // حساب الراتب الصافي بعد خصم المصاريف المسبقة
+      const netSalary = worker.salary - totalAdvances;
+      
+      setPaymentDetails({
+        workerId: workerId,
+        netSalary: netSalary > 0 ? netSalary : 0,
+        totalAdvances: totalAdvances,
+        fullSalary: worker.salary
+      });
+      setShowPaymentConfirmDialog(true);
+    }
+  };
+
+  const confirmPayment = () => {
+    const currentDate = new Date();
+    const currentMonth = currentDate.getMonth() + 1;
+    const currentYear = currentDate.getFullYear();
+    
+    const paymentId = Date.now().toString();
+    addSalaryPayment({
+      id: paymentId,
+      workerId: paymentDetails.workerId,
+      amount: paymentDetails.netSalary,
+      month: currentMonth.toString(),
+      year: currentYear,
+      date: new Date().toISOString().split('T')[0],
+      notes: paymentDetails.totalAdvances > 0 ? 
+        `راتب شهري - خصم مصاريف مسبقة: ${paymentDetails.totalAdvances.toFixed(2)} دج` : 
+        'راتب شهري',
+    });
+    
+    setShowPaymentConfirmDialog(false);
+    setPaymentDetails({ workerId: '', netSalary: 0, totalAdvances: 0, fullSalary: 0 });
   };
 
   const getWorkerPayments = (workerId: string) => {
     return salaryPayments.filter(p => p.workerId === workerId);
   };
 
+  const getLastPayments = (workerId: string, count: number = 3) => {
+    const payments = getWorkerPayments(workerId);
+    return payments.slice(-count).reverse();
+  };
+
   const getLastPayment = (workerId: string) => {
     const payments = getWorkerPayments(workerId);
     return payments.length > 0 ? payments[payments.length - 1] : null;
+  };
+
+  const getTotalAdvances = (workerId: string) => {
+    const advancePayments = salaryPayments.filter(p => 
+      p.workerId === workerId && p.month === 'advance'
+    );
+    return advancePayments.reduce((sum, payment) => sum + payment.amount, 0);
+  };
+
+  const isMonthEnded = (workerId: string) => {
+    const currentDate = new Date();
+    const currentMonth = currentDate.getMonth() + 1;
+    const currentYear = currentDate.getFullYear();
+    const currentDay = currentDate.getDate();
+    
+    if (currentDay > 25) {
+      const payments = salaryPayments.filter(p => 
+        p.workerId === workerId && 
+        p.month === currentMonth.toString() && 
+        p.year === currentYear
+      );
+      return payments.length === 0;
+    }
+    return false;
+  };
+
+  const isWorkerUnpaid = (workerId: string) => {
+    const worker = workers.find(w => w.id === workerId);
+    if (!worker || !worker.hireDate) return false;
+
+    const hireDate = new Date(worker.hireDate);
+    const currentDate = new Date();
+    
+    // حساب عدد الأشهر منذ التوظيف
+    const monthsDiff = (currentDate.getFullYear() - hireDate.getFullYear()) * 12 + 
+                      (currentDate.getMonth() - hireDate.getMonth());
+    
+    // إذا مر شهر أو أكثر منذ التوظيف
+    if (monthsDiff >= 1) {
+      // التحقق من وجود مدفوعات للعامل
+      const workerPayments = salaryPayments.filter(p => p.workerId === workerId && p.month !== 'advance');
+      
+      // إذا لم يكن هناك مدفوعات أو عدد المدفوعات أقل من عدد الأشهر
+      return workerPayments.length < monthsDiff;
+    }
+    
+    return false;
   };
 
   const totalMonthlySalaries = workers.reduce((sum, worker) => sum + (worker.salary || 0), 0);
@@ -188,7 +334,7 @@ const WorkerManagement: React.FC<WorkerManagementProps> = ({ language = 'ar' }) 
           {t.title}
         </h1>
         <div className="flex gap-2">
-          <Dialog>
+          <Dialog open={showAddWorkerDialog} onOpenChange={setShowAddWorkerDialog}>
             <DialogTrigger asChild>
               <Button variant="outline" className="flex items-center gap-2">
                 <Plus className="h-4 w-4" />
@@ -256,7 +402,7 @@ const WorkerManagement: React.FC<WorkerManagementProps> = ({ language = 'ar' }) 
             </DialogContent>
           </Dialog>
 
-          <Dialog>
+          <Dialog open={showAddPaymentDialog} onOpenChange={setShowAddPaymentDialog}>
             <DialogTrigger asChild>
               <Button className="flex items-center gap-2">
                 <Plus className="h-4 w-4" />
@@ -326,41 +472,112 @@ const WorkerManagement: React.FC<WorkerManagementProps> = ({ language = 'ar' }) 
               </div>
             </DialogContent>
           </Dialog>
+
+          {/* نافذة ��لمصاريف المسبقة */}
+          <Dialog open={showAdvancePaymentDialog} onOpenChange={setShowAdvancePaymentDialog}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t.advancePayment}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label>{t.amount}</Label>
+                  <Input
+                    type="number"
+                    value={newPayment.amount}
+                    onChange={(e) => setNewPayment(prev => ({ ...prev, amount: e.target.value }))}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <Label>{t.notes}</Label>
+                  <Textarea
+                    value={newPayment.notes}
+                    onChange={(e) => setNewPayment(prev => ({ ...prev, notes: e.target.value }))}
+                    placeholder="سبب المصاريف المسبقة"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button onClick={handleAdvancePayment}>{t.save}</Button>
+                  <Button variant="outline" onClick={() => setShowAdvancePaymentDialog(false)}>
+                    {t.cancel}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* نافذة تأكيد الدفع */}
+          <AlertDialog open={showPaymentConfirmDialog} onOpenChange={setShowPaymentConfirmDialog}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{t.paymentConfirmation}</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {t.confirmPaymentText}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <div className="space-y-3 my-4">
+                <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                  <span className="font-medium">{t.fullSalary}</span>
+                  <span className="font-bold">{paymentDetails.fullSalary.toFixed(2)} دج</span>
+                </div>
+                {paymentDetails.totalAdvances > 0 && (
+                  <div className="flex justify-between items-center p-3 bg-orange-50 rounded">
+                    <span className="font-medium text-orange-700">{t.advanceDeduction}</span>
+                    <span className="font-bold text-orange-700">-{paymentDetails.totalAdvances.toFixed(2)} دج</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center p-3 bg-green-50 rounded border-2 border-green-200">
+                  <span className="font-bold text-green-700">{t.netAmount}</span>
+                  <span className="font-bold text-green-700 text-lg">{paymentDetails.netSalary.toFixed(2)} دج</span>
+                </div>
+              </div>
+              <AlertDialogFooter>
+                <AlertDialogCancel>{t.cancel}</AlertDialogCancel>
+                <AlertDialogAction onClick={confirmPayment} className="bg-green-600 hover:bg-green-700">
+                  {t.confirmPayment}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <Card className="bg-gradient-to-r from-indigo-500 to-indigo-600 text-white border-0 shadow-lg">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">{t.activeWorkers}</p>
-                <p className="text-2xl font-bold">{workers.filter(w => w.status === 'active').length}</p>
+                <p className="text-indigo-100 text-sm font-medium">{t.activeWorkers}</p>
+                <p className="text-3xl font-bold">{workers.filter(w => w.status === 'active').length}</p>
+                <p className="text-indigo-100 text-xs">عامل</p>
               </div>
-              <Users className="h-8 w-8 text-blue-600" />
+              <Users className="w-8 h-8 text-indigo-200" />
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="bg-gradient-to-r from-green-500 to-green-600 text-white border-0 shadow-lg">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">{t.monthlyPayroll}</p>
-                <p className="text-2xl font-bold text-green-600">{totalMonthlySalaries.toFixed(2)} دج</p>
+                <p className="text-green-100 text-sm font-medium">{t.monthlyPayroll}</p>
+                <p className="text-3xl font-bold">{totalMonthlySalaries.toFixed(2)}</p>
+                <p className="text-green-100 text-xs">دج</p>
               </div>
-              <DollarSign className="h-8 w-8 text-green-600" />
+              <DollarSign className="w-8 h-8 text-green-200" />
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="bg-gradient-to-r from-purple-500 to-purple-600 text-white border-0 shadow-lg">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">{t.recentPayments}</p>
-                <p className="text-2xl font-bold text-purple-600">{totalPaymentsThisMonth.toFixed(2)} دج</p>
+                <p className="text-purple-100 text-sm font-medium">{t.recentPayments}</p>
+                <p className="text-3xl font-bold">{totalPaymentsThisMonth.toFixed(2)}</p>
+                <p className="text-purple-100 text-xs">دج</p>
               </div>
-              <Calendar className="h-8 w-8 text-purple-600" />
+              <Calendar className="w-8 h-8 text-purple-200" />
             </div>
           </CardContent>
         </Card>
@@ -388,6 +605,10 @@ const WorkerManagement: React.FC<WorkerManagementProps> = ({ language = 'ar' }) 
               {workers.map((worker) => {
                 const lastPayment = getLastPayment(worker.id);
                 const workerPayments = getWorkerPayments(worker.id);
+                const lastPayments = getLastPayments(worker.id, 3);
+                const monthEnded = isMonthEnded(worker.id);
+                const unpaid = isWorkerUnpaid(worker.id);
+                const totalAdvances = getTotalAdvances(worker.id);
 
                 return (
                   <Card key={worker.id} className="bg-white">
@@ -396,6 +617,16 @@ const WorkerManagement: React.FC<WorkerManagementProps> = ({ language = 'ar' }) 
                         <span className="flex items-center gap-2">
                           <User className="h-5 w-5" />
                           {worker.name}
+                          {monthEnded && (
+                            <Badge variant="destructive" className="text-xs bg-red-500 text-white">
+                              ⚠️ {t.monthEnded}
+                            </Badge>
+                          )}
+                          {unpaid && (
+                            <Badge variant="destructive" className="text-xs bg-orange-500 text-white">
+                              💰 {t.unpaid}
+                            </Badge>
+                          )}
                         </span>
                         <Badge variant={worker.status === 'active' ? 'default' : 'secondary'}>
                           {worker.status === 'active' ? t.active : t.inactive}
@@ -413,7 +644,7 @@ const WorkerManagement: React.FC<WorkerManagementProps> = ({ language = 'ar' }) 
                         )}
                         {worker.hireDate && (
                           <p className="text-sm text-muted-foreground">
-                            {t.hireDate}: {new Date(worker.hireDate).toLocaleDateString('ar-SA')}
+                            {t.hireDate}: {new Date(worker.hireDate).toLocaleDateString('en-US')}
                           </p>
                         )}
                       </div>
@@ -423,18 +654,59 @@ const WorkerManagement: React.FC<WorkerManagementProps> = ({ language = 'ar' }) 
                           <span className="text-sm">{t.monthlySalary}</span>
                           <span className="font-bold">{worker.salary.toFixed(2)} دج</span>
                         </div>
-                        {lastPayment && (
+                        {totalAdvances > 0 && (
                           <div className="flex justify-between">
-                            <span className="text-sm">{t.lastPayment}</span>
-                            <span className="text-sm text-muted-foreground">
-                              {months.find(m => m.value === lastPayment.month)?.label} {lastPayment.year}
-                            </span>
+                            <span className="text-sm text-orange-600">{t.totalAdvances}</span>
+                            <span className="text-sm font-medium text-orange-600">-{totalAdvances.toFixed(2)} دج</span>
                           </div>
                         )}
                         <div className="flex justify-between">
                           <span className="text-sm">المدفوعات</span>
                           <span className="text-sm font-medium">{workerPayments.length}</span>
                         </div>
+                      </div>
+
+                      {/* آخر المدفوعات */}
+                      {lastPayments.length > 0 && (
+                        <div className="space-y-2 pt-2 border-t">
+                          <h4 className="text-sm font-medium text-muted-foreground">{t.lastPayments}</h4>
+                          {lastPayments.map((payment) => (
+                            <div key={payment.id} className="flex justify-between items-center text-xs">
+                              <span className="text-muted-foreground">
+                                {payment.month === 'advance' ? 'مسبق' : months.find(m => m.value === payment.month)?.label} {payment.year}
+                              </span>
+                              <span className={`font-medium ${payment.month === 'advance' ? 'text-orange-600' : 'text-green-600'}`}>
+                                {payment.month === 'advance' ? '-' : '+'}{payment.amount.toFixed(2)} دج
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="pt-2 border-t space-y-2">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="w-full"
+                          onClick={() => {
+                            setSelectedWorkerId(worker.id);
+                            setShowAdvancePaymentDialog(true);
+                          }}
+                        >
+                          <DollarSign className="h-4 w-4 mr-2" />
+                          {t.advancePayment}
+                        </Button>
+                        
+                        {unpaid && (
+                          <Button 
+                            variant="default" 
+                            size="sm" 
+                            className="w-full bg-green-600 hover:bg-green-700"
+                            onClick={() => handleMarkAsPaid(worker.id)}
+                          >
+                            ✓ {t.markAsPaid}
+                          </Button>
+                        )}
                       </div>
                     </CardContent>
                   </Card>

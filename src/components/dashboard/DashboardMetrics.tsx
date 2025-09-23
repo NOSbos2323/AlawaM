@@ -1,192 +1,298 @@
-import React from "react";
-import { Card, CardContent } from "@/components/ui/card";
-import { useGasStationStore } from "@/store/gasStationStore";
-import {
-  ArrowUpIcon,
-  ArrowDownIcon,
-  TrendingUpIcon,
-  CreditCardIcon,
-  DollarSignIcon,
-  Fuel,
-  DollarSign,
-  TrendingUp,
+import React from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import { useGasStationStore } from '@/store/gasStationStore';
+import { 
+  TrendingUp, 
+  TrendingDown, 
+  DollarSign, 
+  Fuel, 
+  Users, 
   AlertTriangle,
-  Store,
-} from "lucide-react";
-
-interface MetricCardProps {
-  title: string;
-  value: string;
-  trend: number;
-  icon: React.ReactNode;
-  language?: 'ar' | 'fr';
-}
-
-const MetricCard = ({
-  title,
-  value,
-  trend,
-  icon,
-  language = 'ar'
-}: MetricCardProps) => {
-  const isPositive = trend >= 0;
-
-  return (
-    <Card className="bg-white dark:bg-gray-800">
-      <CardContent className="p-6">
-        <div className="flex items-center justify-between">
-          <div className="rounded-full bg-blue-100 dark:bg-blue-900 p-2">
-            {icon}
-          </div>
-          {trend !== 0 && (
-            <div
-              className={`flex items-center text-xs font-medium ${isPositive ? "text-green-500" : "text-red-500"}`}
-            >
-              {isPositive ? (
-                <ArrowUpIcon className="h-3 w-3 mr-1" />
-              ) : (
-                <ArrowDownIcon className="h-3 w-3 mr-1" />
-              )}
-              {Math.abs(trend)}%
-            </div>
-          )}
-        </div>
-        <div className="mt-4">
-          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">
-            {title}
-          </h3>
-          <p className="mt-2 text-3xl font-bold">{value}</p>
-        </div>
-      </CardContent>
-    </Card>
-  );
-};
+  BarChart3,
+  ShoppingCart,
+  CreditCard,
+  Gauge,
+  Activity
+} from 'lucide-react';
 
 interface DashboardMetricsProps {
   language?: 'ar' | 'fr';
-  fuelSold?: string;
-  profits?: string;
-  debts?: string;
-  storeSales?: string;
-  fuelTrend?: number;
-  profitsTrend?: number;
-  debtsTrend?: number;
-  storeTrend?: number;
 }
 
-const DashboardMetrics = ({
-  language = 'ar',
-  fuelSold = "1,250 L",
-  profits = "25,000 دج",
-  debts = "12,500 دج",
-  storeSales = "8,750 دج",
-  fuelTrend = 5,
-  profitsTrend = 12,
-  debtsTrend = -3,
-  storeTrend = 8,
-}: DashboardMetricsProps) => {
+const DashboardMetrics: React.FC<DashboardMetricsProps> = ({ language = 'ar' }) => {
   const { 
-    dailyReadings = [], 
-    customers = [], 
-    storeSales: storeTransactions = [],
-    creditTransactions = []
+    getDashboardMetrics, 
+    fuelTypes, 
+    pumps, 
+    tanks, 
+    customers, 
+    workers,
+    dailyReadings,
+    storeSales,
+    storeItems
   } = useGasStationStore();
+
+  const metrics = getDashboardMetrics();
+  const isRTL = language === 'ar';
 
   const texts = {
     ar: {
-      todaysMetrics: "مقاييس اليوم",
-      dailyRevenue: "الإيرادات اليومية",
-      dailyProfit: "الأرباح اليومية", 
-      totalDebts: "إجمالي الديون",
-      storeRevenue: "إيرادات المتجر",
-      fuelSold: "الوقود المباع",
-      totalProfits: "إجمالي الأرباح",
-      outstandingDebts: "الديون المستحقة",
-      storeSales: "مبيعات المتجر",
+      dailyRevenue: 'الإيرادات اليومية',
+      dailyFuelSales: 'مبيعات الوقود اليومية',
+      dailyProfit: 'الربح اليومي',
+      totalDebts: 'إجمالي الديون',
+      dailyStoreSales: 'مبيعات المتجر اليومية',
+      tankLevels: 'مستويات الخزانات',
+      lowStockAlerts: 'تنبيهات المخزون المنخفض',
+      activeWorkers: 'العمال النشطون',
+      activePumps: 'المضخات النشطة',
+      totalCustomers: 'إجمالي العملاء',
+      liters: 'لتر',
+      dzd: 'دج',
+      workers: 'عامل',
+      pumps: 'مضخة',
+      customers: 'عميل',
+      items: 'منتج',
+      critical: 'حرج',
+      warning: 'تحذير',
+      good: 'جيد',
+      capacity: 'السعة',
+      current: 'الحالي',
+      percentage: 'النسبة',
+      compared: 'مقارنة بالأمس',
+      increase: 'زيادة',
+      decrease: 'نقصان',
+      transactions: 'معاملة',
+      today: 'اليوم',
+      total: 'إجمالي',
+      from: 'من',
+      needsRefill: 'يحتاج إعادة تموين',
     },
     fr: {
-      todaysMetrics: "Métriques d'aujourd'hui",
-      dailyRevenue: "Revenus quotidiens",
-      dailyProfit: "Bénéfices quotidiens",
-      totalDebts: "Total des dettes", 
-      storeRevenue: "Revenus du magasin",
-      fuelSold: "Carburant vendu",
-      totalProfits: "Bénéfices totaux",
-      outstandingDebts: "Dettes en cours",
-      storeSales: "Ventes du magasin",
+      dailyRevenue: 'Revenus Quotidiens',
+      dailyFuelSales: 'Ventes de Carburant Quotidiennes',
+      dailyProfit: 'Profit Quotidien',
+      totalDebts: 'Total des Dettes',
+      dailyStoreSales: 'Ventes du Magasin Quotidiennes',
+      tankLevels: 'Niveaux des Réservoirs',
+      lowStockAlerts: 'Alertes Stock Faible',
+      activeWorkers: 'Employés Actifs',
+      activePumps: 'Pompes Actives',
+      totalCustomers: 'Total Clients',
+      liters: 'Litres',
+      dzd: 'DZD',
+      workers: 'Employé',
+      pumps: 'Pompe',
+      customers: 'Client',
+      items: 'Article',
+      critical: 'Critique',
+      warning: 'Attention',
+      good: 'Bon',
+      capacity: 'Capacité',
+      current: 'Actuel',
+      percentage: 'Pourcentage',
+      compared: 'Comparé à hier',
+      increase: 'Augmentation',
+      decrease: 'Diminution',
+      transactions: 'Transaction',
+      today: 'Aujourd\'hui',
+      total: 'Total',
+      from: 'Sur',
+      needsRefill: 'Besoin de réapprovisionnement',
     },
   };
 
   const t = texts[language];
 
-  // Calculate metrics from store data
-  const today = new Date().toISOString().split('T')[0];
-  const todayReadings = dailyReadings.filter(reading => reading.date === today);
-  const todayStoreTransactions = storeTransactions.filter(transaction => transaction.date === today);
-  
-  const dailyRevenue = todayReadings.reduce((sum, reading) => sum + (reading.totalSales || 0), 0) +
-                     todayStoreTransactions.reduce((sum, transaction) => sum + transaction.amount, 0);
-  
-  const dailyProfit = dailyRevenue * 0.15; // Assuming 15% profit margin
-  const totalDebts = customers.reduce((sum, customer) => sum + (customer.currentDebt || 0), 0);
-  const dailyStoreSales = todayStoreTransactions.reduce((sum, transaction) => sum + transaction.amount, 0);
+  // حساب إحصائيات إضافية
+  const activeWorkers = workers.filter(w => w.status === 'active').length;
+  const activePumps = pumps.filter(p => p.isActive).length;
+  const totalCustomers = customers.length;
+  const customersWithDebt = customers.filter(c => c.currentDebt > 0).length;
 
-  const metrics = {
-    dailyRevenue,
-    dailyProfit,
-    totalDebts,
-    dailyStoreSales
+  // تنسيق الأرقام بالأرقام الإنجليزية دائماً
+  const formatNumber = (num: number, decimals: number = 2) => {
+    if (isNaN(num)) return '0';
+    return num.toLocaleString('en-US', {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals
+    });
   };
 
+  // حساب نسبة التغيير (محاكاة - يمكن تحسينها لاحقاً)
+  const getChangePercentage = (current: number, previous: number) => {
+    if (previous === 0) return 0;
+    return ((current - previous) / previous) * 100;
+  };
+
+  // محاكاة البيانات السابقة للمقارنة
+  const previousMetrics = {
+    dailyRevenue: metrics.dailyRevenue * 0.85,
+    dailyFuelSales: metrics.dailyFuelSales * 0.92,
+    dailyProfit: metrics.dailyProfit * 0.88,
+  };
+
+  const revenueChange = getChangePercentage(metrics.dailyRevenue, previousMetrics.dailyRevenue);
+  const fuelSalesChange = getChangePercentage(metrics.dailyFuelSales, previousMetrics.dailyFuelSales);
+  const profitChange = getChangePercentage(metrics.dailyProfit, previousMetrics.dailyProfit);
+
+  // حساب معاملات اليوم
+  const todayTransactions = storeSales.filter(s => s.date === new Date().toISOString().split('T')[0]).length;
+
   return (
-    <div className="bg-background p-4 rounded-lg">
-      <h2 className="text-xl font-semibold mb-4">{t.todaysMetrics}</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">{t.dailyRevenue}</p>
-                <p className="text-2xl font-bold text-green-600">{metrics.dailyRevenue.toFixed(2)} دج</p>
-              </div>
-              <DollarSign className="h-8 w-8 text-green-600" />
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8" dir={isRTL ? 'rtl' : 'ltr'}>
+      {/* Daily Revenue */}
+      <Card className="bg-gradient-to-r from-blue-500 to-blue-600 text-white border-0 shadow-lg">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-blue-100 text-sm font-medium">{t.dailyRevenue}</p>
+              <p className="text-3xl font-bold">{formatNumber(metrics.dailyRevenue)}</p>
+              <p className="text-blue-100 text-xs">{t.dzd}</p>
             </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">{t.dailyProfit}</p>
-                <p className="text-2xl font-bold text-blue-600">{metrics.dailyProfit.toFixed(2)} دج</p>
-              </div>
-              <TrendingUp className="h-8 w-8 text-blue-600" />
+            <DollarSign className="w-8 h-8 text-blue-200" />
+          </div>
+          <div className="flex items-center text-xs text-blue-100 mt-2">
+            {revenueChange >= 0 ? (
+              <TrendingUp className="h-3 w-3 mr-1" />
+            ) : (
+              <TrendingDown className="h-3 w-3 mr-1" />
+            )}
+            {formatNumber(Math.abs(revenueChange), 1)}% {t.compared}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Daily Fuel Sales */}
+      <Card className="bg-gradient-to-r from-yellow-500 to-yellow-600 text-white border-0 shadow-lg">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-yellow-100 text-sm font-medium">{t.dailyFuelSales}</p>
+              <p className="text-3xl font-bold">{formatNumber(metrics.dailyFuelSales, 0)}</p>
+              <p className="text-yellow-100 text-xs">{t.liters}</p>
             </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">{t.totalDebts}</p>
-                <p className="text-2xl font-bold text-red-600">{metrics.totalDebts.toFixed(2)} دج</p>
-              </div>
-              <AlertTriangle className="h-8 w-8 text-red-600" />
+            <Fuel className="w-8 h-8 text-yellow-200" />
+          </div>
+          <div className="flex items-center text-xs text-yellow-100 mt-2">
+            {fuelSalesChange >= 0 ? (
+              <TrendingUp className="h-3 w-3 mr-1" />
+            ) : (
+              <TrendingDown className="h-3 w-3 mr-1" />
+            )}
+            {formatNumber(Math.abs(fuelSalesChange), 1)}% {t.compared}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Daily Profit */}
+      <Card className="bg-gradient-to-r from-green-500 to-green-600 text-white border-0 shadow-lg">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-green-100 text-sm font-medium">{t.dailyProfit}</p>
+              <p className="text-3xl font-bold">{formatNumber(metrics.dailyProfit)}</p>
+              <p className="text-green-100 text-xs">{t.dzd}</p>
             </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">{t.storeRevenue}</p>
-                <p className="text-2xl font-bold text-purple-600">{metrics.dailyStoreSales.toFixed(2)} دج</p>
-              </div>
-              <Store className="h-8 w-8 text-purple-600" />
+            <Activity className="w-8 h-8 text-green-200" />
+          </div>
+          <div className="flex items-center text-xs text-green-100 mt-2">
+            {profitChange >= 0 ? (
+              <TrendingUp className="h-3 w-3 mr-1" />
+            ) : (
+              <TrendingDown className="h-3 w-3 mr-1" />
+            )}
+            {formatNumber(Math.abs(profitChange), 1)}% {t.compared}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Total Debts */}
+      <Card className="bg-gradient-to-r from-red-500 to-red-600 text-white border-0 shadow-lg">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-red-100 text-sm font-medium">{t.totalDebts}</p>
+              <p className="text-3xl font-bold">{formatNumber(metrics.totalDebts)}</p>
+              <p className="text-red-100 text-xs">{t.dzd}</p>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+            <CreditCard className="w-8 h-8 text-red-200" />
+          </div>
+          <div className="text-xs text-red-100 mt-2">
+            {formatNumber(customersWithDebt, 0)} {t.from} {formatNumber(totalCustomers, 0)} {t.customers}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Store Sales */}
+      <Card className="bg-gradient-to-r from-teal-500 to-teal-600 text-white border-0 shadow-lg">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-teal-100 text-sm font-medium">{t.dailyStoreSales}</p>
+              <p className="text-3xl font-bold">{formatNumber(metrics.dailyStoreSales)}</p>
+              <p className="text-teal-100 text-xs">{t.dzd}</p>
+            </div>
+            <ShoppingCart className="w-8 h-8 text-teal-200" />
+          </div>
+          <div className="text-xs text-teal-100 mt-2">
+            {formatNumber(todayTransactions, 0)} {t.transactions} {t.today}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Active Workers */}
+      <Card className="bg-gradient-to-r from-indigo-500 to-indigo-600 text-white border-0 shadow-lg">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-indigo-100 text-sm font-medium">{t.activeWorkers}</p>
+              <p className="text-3xl font-bold">{formatNumber(activeWorkers, 0)}</p>
+              <p className="text-indigo-100 text-xs">{t.workers}</p>
+            </div>
+            <Users className="w-8 h-8 text-indigo-200" />
+          </div>
+          <div className="text-xs text-indigo-100 mt-2">
+            {t.from} {t.total} {formatNumber(workers.length, 0)} {t.workers}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Active Pumps */}
+      <Card className="bg-gradient-to-r from-cyan-500 to-cyan-600 text-white border-0 shadow-lg">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-cyan-100 text-sm font-medium">{t.activePumps}</p>
+              <p className="text-3xl font-bold">{formatNumber(activePumps, 0)}</p>
+              <p className="text-cyan-100 text-xs">{t.pumps}</p>
+            </div>
+            <Gauge className="w-8 h-8 text-cyan-200" />
+          </div>
+          <div className="text-xs text-cyan-100 mt-2">
+            {t.from} {t.total} {formatNumber(pumps.length, 0)} {t.pumps}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Low Stock Alerts */}
+      <Card className="bg-gradient-to-r from-orange-500 to-orange-600 text-white border-0 shadow-lg">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-orange-100 text-sm font-medium">{t.lowStockAlerts}</p>
+              <p className="text-3xl font-bold">{formatNumber(metrics.lowStockAlerts, 0)}</p>
+              <p className="text-orange-100 text-xs">{t.items}</p>
+            </div>
+            <AlertTriangle className="w-8 h-8 text-orange-200" />
+          </div>
+          <div className="text-xs text-orange-100 mt-2">
+            {t.needsRefill}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };
